@@ -270,3 +270,31 @@ export const getReport = async (req: Request, res: Response) => {
         res.status(500).json({ error: 'Failed to fetch report' });
     }
 };
+
+export const clearHistory = async (req: Request, res: Response) => {
+    try {
+        const userId = req.userId;
+
+        // Delete all transcripts for user's sessions first
+        const sessions = await prisma.session.findMany({
+            where: { userId },
+            select: { id: true }
+        });
+
+        const sessionIds = sessions.map(s => s.id);
+
+        await prisma.transcript.deleteMany({
+            where: { sessionId: { in: sessionIds } }
+        });
+
+        // Then delete all sessions
+        await prisma.session.deleteMany({
+            where: { userId }
+        });
+
+        res.json({ success: true, message: 'History cleared' });
+    } catch (error) {
+        console.error('Clear history error:', error);
+        res.status(500).json({ error: 'Failed to clear history' });
+    }
+};

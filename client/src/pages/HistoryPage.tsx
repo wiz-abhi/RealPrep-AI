@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
+import { Trash2 } from 'lucide-react';
 
 export const HistoryPage = () => {
     const navigate = useNavigate();
     const [sessions, setSessions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'completed' | 'active'>('all');
+    const [clearing, setClearing] = useState(false);
 
     useEffect(() => {
         fetchHistory();
@@ -28,6 +30,24 @@ export const HistoryPage = () => {
         }
     };
 
+    const handleClearHistory = async () => {
+        if (!confirm('Are you sure you want to clear all interview history? This cannot be undone.')) return;
+
+        setClearing(true);
+        try {
+            const token = localStorage.getItem('token');
+            await fetch('http://localhost:3000/api/interview/clear-history', {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            setSessions([]);
+        } catch (error) {
+            console.error('Failed to clear history:', error);
+        } finally {
+            setClearing(false);
+        }
+    };
+
     const filteredSessions = sessions.filter(session => {
         if (filter === 'all') return true;
         return session.status === filter;
@@ -37,7 +57,7 @@ export const HistoryPage = () => {
         return (
             <div className="flex min-h-screen bg-black">
                 <Sidebar />
-                <main className="flex-1 p-8 pt-24 flex items-center justify-center">
+                <main className="flex-1 ml-16 lg:ml-56 p-8 pt-24 flex items-center justify-center">
                     <div className="text-white/30">Loading history...</div>
                 </main>
             </div>
@@ -56,9 +76,21 @@ export const HistoryPage = () => {
                             <h1 className="text-2xl font-light">Interview History</h1>
                             <p className="text-white/40 text-sm mt-1">View past sessions and reports</p>
                         </div>
-                        <button onClick={() => navigate('/resumes')} className="btn-primary text-sm">
-                            New Interview
-                        </button>
+                        <div className="flex items-center gap-3">
+                            {sessions.length > 0 && (
+                                <button
+                                    onClick={handleClearHistory}
+                                    disabled={clearing}
+                                    className="flex items-center gap-2 px-3 py-2 text-xs text-white/40 hover:text-white border border-white/10 rounded hover:bg-white/5 transition-all disabled:opacity-50"
+                                >
+                                    <Trash2 size={14} />
+                                    {clearing ? 'Clearing...' : 'Clear History'}
+                                </button>
+                            )}
+                            <button onClick={() => navigate('/resumes')} className="btn-primary text-sm">
+                                New Interview
+                            </button>
+                        </div>
                     </div>
 
                     {/* Filters */}

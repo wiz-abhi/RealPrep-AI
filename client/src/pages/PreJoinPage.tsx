@@ -2,11 +2,15 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { GlassCard } from '../components/ui/GlassCard';
+import { Clock } from 'lucide-react';
 
 export const PreJoinPage = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { sessionId, agentArgs } = location.state || {};
+
+    const [duration, setDuration] = useState(15); // Default 15 minutes
+    const durationOptions = [10, 15, 20, 30, 45, 60];
 
     const [checks, setChecks] = useState([
         { id: 'init', label: 'Initializing AI process', status: 'pending' },
@@ -64,7 +68,7 @@ export const PreJoinPage = () => {
     };
 
     const handleBegin = () => {
-        navigate('/interview', { state: { sessionId, agentArgs } });
+        navigate('/interview', { state: { sessionId, agentArgs, duration } });
     };
 
     return (
@@ -98,9 +102,31 @@ export const PreJoinPage = () => {
                             </div>
                         </GlassCard>
 
+                        {/* Duration Selector */}
+                        <GlassCard className="p-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <Clock size={16} className="text-white/40" />
+                                <span className="text-sm text-white/70">Interview Duration</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {durationOptions.map((d) => (
+                                    <button
+                                        key={d}
+                                        onClick={() => setDuration(d)}
+                                        className={`px-3 py-1.5 rounded text-xs transition-all ${duration === d
+                                                ? 'bg-white/10 text-white border border-white/20'
+                                                : 'bg-white/5 text-white/40 border border-white/5 hover:bg-white/10'
+                                            }`}
+                                    >
+                                        {d} min
+                                    </button>
+                                ))}
+                            </div>
+                        </GlassCard>
+
                         <div className="flex justify-between text-xs text-white/30 px-1">
                             <span>Position: {agentArgs?.jobTitle || 'Software Developer'}</span>
-                            <span>Duration: ~15 min</span>
+                            <span>Duration: {duration} min</span>
                         </div>
                     </div>
 
@@ -130,7 +156,7 @@ export const PreJoinPage = () => {
                                     onClick={handleBegin}
                                     className="btn-primary w-full text-sm tracking-wide"
                                 >
-                                    Begin Interview
+                                    Begin Interview ({duration} min)
                                 </button>
                             ) : (
                                 <div className="h-12" />
