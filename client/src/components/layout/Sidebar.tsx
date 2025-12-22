@@ -1,6 +1,5 @@
-import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Home, User, Settings, Video, FileText, LogOut } from 'lucide-react';
+import { Home, User, Settings, Video, FileText, LogOut, Clock } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const Sidebar = () => {
@@ -8,48 +7,52 @@ const Sidebar = () => {
 
     const navItems = [
         { icon: Home, label: 'Dashboard', path: '/dashboard' },
-        { icon: FileText, label: 'My Resumes', path: '/resumes' },
-        { icon: Video, label: 'Upload Resume', path: '/upload' },
-        { icon: FileText, label: 'History', path: '/history' },
+        { icon: FileText, label: 'Resumes', path: '/resumes' },
+        { icon: Video, label: 'Upload', path: '/upload' },
+        { icon: Clock, label: 'History', path: '/history' },
         { icon: User, label: 'Profile', path: '/profile' },
         { icon: Settings, label: 'Settings', path: '/settings' },
     ];
 
     return (
-        <aside className="w-20 lg:w-64 h-screen glass border-r border-white/10 flex flex-col justify-between py-6 z-20">
-            {/* Logo Area */}
-            <div className="flex items-center justify-center lg:justify-start lg:px-8 mb-10">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-cyan-400 to-purple-600 animate-pulse flex-shrink-0" />
-                <span className="hidden lg:block ml-3 font-bold text-xl tracking-wider">AI<span className="text-cyan-400">NT</span></span>
+        <aside className="fixed left-0 top-0 w-16 lg:w-56 h-screen glass border-r border-white/5 flex flex-col justify-between py-6 z-40">
+            {/* Logo */}
+            <div className="flex items-center justify-center lg:justify-start lg:px-6 mb-8">
+                <div className="w-8 h-8 rounded border border-white/20 flex items-center justify-center">
+                    <span className="text-xs font-bold">R</span>
+                </div>
+                <span className="hidden lg:block ml-3 text-sm font-light tracking-[0.12em] text-white/80">
+                    REALPREP
+                </span>
             </div>
 
-            {/* Nav Links */}
-            <nav className="flex-1 px-4 space-y-2">
+            {/* Nav */}
+            <nav className="flex-1 px-2 lg:px-3 space-y-1">
                 {navItems.map((item) => (
                     <NavLink
                         key={item.path}
                         to={item.path}
                         className={({ isActive }) => `
-                            flex items-center justify-center lg:justify-start px-4 py-3 rounded-xl transition-all duration-200 group
+                            flex items-center justify-center lg:justify-start px-3 py-2.5 rounded transition-all duration-200 group
                             ${isActive
-                                ? 'bg-gradient-to-r from-cyan-500/20 to-purple-500/20 text-white border border-white/10 shadow-[0_0_15px_rgba(0,243,255,0.1)]'
-                                : 'text-gray-400 hover:text-white hover:bg-white/5'}
+                                ? 'bg-white/5 text-white border border-white/10'
+                                : 'text-white/40 hover:text-white/70 hover:bg-white/5 border border-transparent'}
                         `}
                     >
-                        <item.icon size={20} className="group-hover:text-cyan-400 transition-colors" />
-                        <span className="hidden lg:block ml-3 font-medium">{item.label}</span>
+                        <item.icon size={18} className="shrink-0" />
+                        <span className="hidden lg:block ml-3 text-sm">{item.label}</span>
                     </NavLink>
                 ))}
             </nav>
 
             {/* Logout */}
-            <div className="px-4 mt-auto">
+            <div className="px-2 lg:px-3">
                 <button
                     onClick={logout}
-                    className="w-full flex items-center justify-center lg:justify-start px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10 transition-all group"
+                    className="w-full flex items-center justify-center lg:justify-start px-3 py-2.5 rounded text-white/30 hover:text-white/60 hover:bg-white/5 transition-all"
                 >
-                    <LogOut size={20} />
-                    <span className="hidden lg:block ml-3 font-medium">Logout</span>
+                    <LogOut size={18} />
+                    <span className="hidden lg:block ml-3 text-sm">Logout</span>
                 </button>
             </div>
         </aside>

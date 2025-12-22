@@ -16,6 +16,7 @@ import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { FeaturesPage } from './pages/FeaturesPage';
 import { PricingPage } from './pages/PricingPage';
+import { PreJoinPage } from './pages/PreJoinPage';
 
 import { AuthProvider } from './context/AuthContext';
 
@@ -35,6 +36,7 @@ function App() {
             <Route path="/upload" element={<ResumeUploadPage />} />
             <Route path="/analyze" element={<ResumeAnalysisPage />} />
             <Route path="/interview-setup" element={<InterviewSetupPage />} />
+            <Route path="/pre-join" element={<PreJoinPage />} />
             <Route path="/interview" element={<InterviewPage />} />
             <Route path="/report/:sessionId" element={<ReportPage />} />
             <Route path="/history" element={<HistoryPage />} />

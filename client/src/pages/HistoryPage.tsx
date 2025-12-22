@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
-import { NeonButton } from '../components/ui/NeonButton';
 
 export const HistoryPage = () => {
     const navigate = useNavigate();
@@ -18,9 +17,7 @@ export const HistoryPage = () => {
         try {
             const token = localStorage.getItem('token');
             const res = await fetch('http://localhost:3000/api/interview/history', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
+                headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
             setSessions(data.data || []);
@@ -36,147 +33,118 @@ export const HistoryPage = () => {
         return session.status === filter;
     });
 
-    const getStatusColor = (status: string) => {
-        switch (status) {
-            case 'completed': return 'text-green-400 bg-green-500/10 border-green-500/20';
-            case 'active': return 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20';
-            default: return 'text-gray-400 bg-gray-500/10 border-gray-500/20';
-        }
-    };
-
     if (loading) {
         return (
-            <div className="flex bg-[#050505] min-h-screen">
+            <div className="flex min-h-screen bg-black">
                 <Sidebar />
-                <main className="flex-1 p-6 flex items-center justify-center">
-                    <div className="text-white text-xl">Loading history...</div>
+                <main className="flex-1 p-8 pt-24 flex items-center justify-center">
+                    <div className="text-white/30">Loading history...</div>
                 </main>
             </div>
         );
     }
 
     return (
-        <div className="flex bg-[#050505] min-h-screen text-white">
+        <div className="flex min-h-screen bg-black text-white">
             <Sidebar />
 
-            <main className="flex-1 p-6 overflow-y-auto">
-                <div className="max-w-6xl mx-auto space-y-6">
+            <main className="flex-1 ml-16 lg:ml-56 p-8 pt-24">
+                <div className="max-w-5xl mx-auto space-y-6">
                     {/* Header */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <h1 className="text-3xl font-bold">Interview History</h1>
-                            <p className="text-gray-400 mt-2">
-                                View all your past interview sessions and reports
-                            </p>
+                            <h1 className="text-2xl font-light">Interview History</h1>
+                            <p className="text-white/40 text-sm mt-1">View past sessions and reports</p>
                         </div>
-                        <NeonButton onClick={() => navigate('/resumes')}>
+                        <button onClick={() => navigate('/resumes')} className="btn-primary text-sm">
                             New Interview
-                        </NeonButton>
+                        </button>
                     </div>
 
                     {/* Filters */}
-                    <div className="flex gap-3">
-                        <button
-                            onClick={() => setFilter('all')}
-                            className={`px-4 py-2 rounded-lg transition-all ${filter === 'all'
-                                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/50'
-                                    : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
-                                }`}
-                        >
-                            All Sessions
-                        </button>
-                        <button
-                            onClick={() => setFilter('completed')}
-                            className={`px-4 py-2 rounded-lg transition-all ${filter === 'completed'
-                                    ? 'bg-green-500/20 text-green-400 border border-green-500/50'
-                                    : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
-                                }`}
-                        >
-                            Completed
-                        </button>
-                        <button
-                            onClick={() => setFilter('active')}
-                            className={`px-4 py-2 rounded-lg transition-all ${filter === 'active'
-                                    ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/50'
-                                    : 'bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10'
-                                }`}
-                        >
-                            Active
-                        </button>
+                    <div className="flex gap-2">
+                        {['all', 'completed', 'active'].map((f) => (
+                            <button
+                                key={f}
+                                onClick={() => setFilter(f as any)}
+                                className={`px-4 py-2 rounded text-sm transition-all ${filter === f
+                                    ? 'bg-white/10 text-white border border-white/20'
+                                    : 'bg-white/5 text-white/40 border border-white/5 hover:bg-white/10'
+                                    }`}
+                            >
+                                {f.charAt(0).toUpperCase() + f.slice(1)}
+                            </button>
+                        ))}
                     </div>
 
-                    {/* Sessions List */}
+                    {/* Sessions */}
                     {filteredSessions.length === 0 ? (
                         <GlassCard className="p-12 text-center">
-                            <div className="text-6xl mb-4">📋</div>
-                            <h3 className="text-xl font-bold mb-2">No Sessions Found</h3>
-                            <p className="text-gray-400 mb-6">
+                            <div className="text-4xl mb-4 opacity-30">📋</div>
+                            <h3 className="text-lg font-light mb-2 text-white/80">No Sessions Found</h3>
+                            <p className="text-white/40 text-sm mb-6">
                                 {filter === 'all'
-                                    ? "You haven't completed any interviews yet. Start your first one!"
-                                    : `No ${filter} sessions found.`}
+                                    ? "Start your first interview to see history here."
+                                    : `No ${filter} sessions.`}
                             </p>
-                            <NeonButton onClick={() => navigate('/resumes')}>
+                            <button onClick={() => navigate('/resumes')} className="btn-primary text-sm">
                                 Start Interview
-                            </NeonButton>
+                            </button>
                         </GlassCard>
                     ) : (
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                             {filteredSessions.map((session) => (
                                 <GlassCard
                                     key={session.id}
-                                    className="p-6 hover:scale-[1.02] transition-transform cursor-pointer"
+                                    hover
+                                    className="p-5"
                                     onClick={() => session.status === 'completed' && navigate(`/report/${session.id}`)}
                                 >
                                     <div className="flex items-center justify-between">
-                                        <div className="flex-1">
-                                            <div className="flex items-center gap-3 mb-2">
-                                                <h3 className="text-xl font-bold">{session.type} Interview</h3>
-                                                <span className={`px-3 py-1 rounded-full text-xs border ${getStatusColor(session.status)}`}>
-                                                    {session.status.charAt(0).toUpperCase() + session.status.slice(1)}
+                                        <div>
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <h3 className="text-sm font-medium text-white/90">
+                                                    {session.type} Interview
+                                                </h3>
+                                                <span className={`px-2 py-0.5 rounded text-[10px] border ${session.status === 'completed'
+                                                    ? 'text-white/60 bg-white/5 border-white/10'
+                                                    : 'text-white/40 bg-white/5 border-white/5'
+                                                    }`}>
+                                                    {session.status}
                                                 </span>
                                             </div>
-                                            <p className="text-sm text-gray-400">
+                                            <p className="text-xs text-white/30">
                                                 {new Date(session.createdAt).toLocaleDateString('en-US', {
                                                     year: 'numeric',
-                                                    month: 'long',
-                                                    day: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit'
+                                                    month: 'short',
+                                                    day: 'numeric'
                                                 })}
                                             </p>
                                         </div>
 
                                         <div className="flex items-center gap-6">
                                             {session.status === 'completed' && (
-                                                <div className="text-center">
-                                                    <div className="text-3xl font-bold text-cyan-400">
+                                                <div className="text-right">
+                                                    <div className="text-lg font-light text-white/80">
                                                         {session.score || 0}
                                                     </div>
-                                                    <div className="text-xs text-gray-500">Score</div>
+                                                    <div className="text-[10px] text-white/30 uppercase tracking-wider">Score</div>
                                                 </div>
                                             )}
 
-                                            {session.status === 'completed' ? (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (session.status === 'completed') {
                                                         navigate(`/report/${session.id}`);
-                                                    }}
-                                                    className="px-4 py-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all"
-                                                >
-                                                    View Report →
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
+                                                    } else {
                                                         navigate('/interview', { state: { sessionId: session.id } });
-                                                    }}
-                                                    className="px-4 py-2 rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 hover:bg-yellow-500/20 transition-all"
-                                                >
-                                                    Continue →
-                                                </button>
-                                            )}
+                                                    }
+                                                }}
+                                                className="btn-secondary text-xs"
+                                            >
+                                                {session.status === 'completed' ? 'View Report' : 'Continue'}
+                                            </button>
                                         </div>
                                     </div>
                                 </GlassCard>
@@ -184,25 +152,21 @@ export const HistoryPage = () => {
                         </div>
                     )}
 
-                    {/* Stats Summary */}
+                    {/* Stats */}
                     {sessions.length > 0 && (
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <GlassCard className="p-6 text-center">
-                                <div className="text-4xl font-bold text-cyan-400">
-                                    {sessions.length}
-                                </div>
-                                <p className="text-gray-400 mt-2">Total Sessions</p>
+                        <div className="grid grid-cols-3 gap-4 pt-6">
+                            <GlassCard hover className="p-5 text-center">
+                                <div className="text-2xl font-light text-white/90">{sessions.length}</div>
+                                <p className="text-[10px] uppercase tracking-widest text-white/30 mt-2">Total</p>
                             </GlassCard>
-
-                            <GlassCard className="p-6 text-center">
-                                <div className="text-4xl font-bold text-green-400">
+                            <GlassCard hover className="p-5 text-center">
+                                <div className="text-2xl font-light text-white/90">
                                     {sessions.filter(s => s.status === 'completed').length}
                                 </div>
-                                <p className="text-gray-400 mt-2">Completed</p>
+                                <p className="text-[10px] uppercase tracking-widest text-white/30 mt-2">Completed</p>
                             </GlassCard>
-
-                            <GlassCard className="p-6 text-center">
-                                <div className="text-4xl font-bold text-purple-400">
+                            <GlassCard hover className="p-5 text-center">
+                                <div className="text-2xl font-light text-white/90">
                                     {sessions.filter(s => s.status === 'completed').length > 0
                                         ? Math.round(
                                             sessions
@@ -212,7 +176,7 @@ export const HistoryPage = () => {
                                         )
                                         : 0}
                                 </div>
-                                <p className="text-gray-400 mt-2">Average Score</p>
+                                <p className="text-[10px] uppercase tracking-widest text-white/30 mt-2">Avg Score</p>
                             </GlassCard>
                         </div>
                     )}

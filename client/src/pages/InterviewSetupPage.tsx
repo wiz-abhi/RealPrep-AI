@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
-import { NeonButton } from '../components/ui/NeonButton';
 import { useAuth } from '../context/AuthContext';
 
 export const InterviewSetupPage = () => {
@@ -35,12 +34,10 @@ export const InterviewSetupPage = () => {
         try {
             const token = localStorage.getItem('token');
 
-            // Upload reference document if provided
             if (referenceFile) {
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const content = e.target?.result as string;
-
                     await fetch('http://localhost:3000/api/reference/upload', {
                         method: 'POST',
                         headers: {
@@ -57,7 +54,6 @@ export const InterviewSetupPage = () => {
                 reader.readAsText(referenceFile);
             }
 
-            // Start interview session
             const res = await fetch('http://localhost:3000/api/interview/start', {
                 method: 'POST',
                 headers: {
@@ -74,7 +70,7 @@ export const InterviewSetupPage = () => {
             const data = await res.json();
 
             if (data.success) {
-                navigate('/interview', {
+                navigate('/pre-join', {
                     state: {
                         sessionId: data.data.sessionId,
                         agentArgs: data.data.agentArgs
@@ -92,58 +88,54 @@ export const InterviewSetupPage = () => {
     };
 
     const promptSuggestions = [
-        "Focus on my system design and architecture skills",
-        "Ask behavioral questions about teamwork and leadership",
-        "Test my knowledge of data structures and algorithms",
-        "Conduct a frontend development interview",
-        "Focus on my AI/ML project experience",
-        "Ask about my experience with cloud technologies"
+        "Focus on system design",
+        "Behavioral questions",
+        "Data structures & algorithms",
+        "Frontend development",
+        "AI/ML experience",
+        "Cloud technologies"
     ];
 
     return (
-        <div className="flex bg-[#050505] min-h-screen text-white">
+        <div className="flex min-h-screen bg-black text-white">
             <Sidebar />
 
-            <main className="flex-1 p-6 overflow-y-auto">
-                <div className="max-w-4xl mx-auto space-y-6">
+            <main className="flex-1 ml-16 lg:ml-56 p-8 pt-24">
+                <div className="max-w-3xl mx-auto space-y-6">
                     {/* Header */}
                     <div>
-                        <h1 className="text-3xl font-bold">Interview Setup</h1>
-                        <p className="text-gray-400 mt-2">
-                            Customize your interview experience with specific instructions and reference materials
+                        <h1 className="text-2xl font-light text-white">Interview Setup</h1>
+                        <p className="text-white/40 mt-1 text-sm">
+                            Customize your practice session
                         </p>
                     </div>
 
                     {error && (
-                        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300">
+                        <div className="p-4 rounded bg-white/5 border border-white/10 text-white/70 text-sm">
                             {error}
                         </div>
                     )}
 
-                    {/* Interview Instructions */}
+                    {/* Instructions */}
                     <GlassCard className="p-6">
-                        <h2 className="text-xl font-bold mb-4">Interview Instructions</h2>
-                        <p className="text-sm text-gray-400 mb-4">
-                            Tell the AI interviewer what you want to focus on. Be specific about topics,
-                            skills, or types of questions you'd like to practice.
-                        </p>
-
+                        <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">
+                            Interview Focus
+                        </h2>
                         <textarea
                             value={instructionPrompt}
                             onChange={(e) => setInstructionPrompt(e.target.value)}
-                            placeholder="Example: Focus on my backend development experience, especially with Node.js and databases. Ask about scalability challenges I've faced and how I solved them."
-                            className="w-full h-32 px-4 py-3 rounded-lg bg-white/5 border border-white/10 focus:border-cyan-500 focus:outline-none resize-none"
+                            placeholder="Example: Focus on my backend development experience, especially with Node.js and databases..."
+                            className="w-full h-28 px-4 py-3 rounded bg-white/5 border border-white/10 focus:border-white/30 focus:outline-none resize-none text-sm text-white placeholder:text-white/20"
                         />
 
-                        {/* Suggestions */}
                         <div className="mt-4">
-                            <p className="text-xs text-gray-500 mb-2">Quick suggestions:</p>
+                            <p className="text-[10px] uppercase tracking-wider text-white/30 mb-2">Quick suggestions</p>
                             <div className="flex flex-wrap gap-2">
                                 {promptSuggestions.map((suggestion, i) => (
                                     <button
                                         key={i}
                                         onClick={() => setInstructionPrompt(suggestion)}
-                                        className="px-3 py-1 text-xs rounded-lg bg-white/5 border border-white/10 hover:border-cyan-500/50 hover:bg-white/10 transition-all"
+                                        className="px-3 py-1.5 text-xs rounded bg-white/5 border border-white/5 hover:border-white/20 transition-all text-white/60 hover:text-white/90"
                                     >
                                         {suggestion}
                                     </button>
@@ -152,44 +144,37 @@ export const InterviewSetupPage = () => {
                         </div>
                     </GlassCard>
 
-                    {/* Reference Documents (Optional) */}
+                    {/* Reference Documents */}
                     <GlassCard className="p-6">
-                        <h2 className="text-xl font-bold mb-4">Reference Documents (Optional)</h2>
-                        <p className="text-sm text-gray-400 mb-4">
-                            Upload a job description or sample interview questions to help the AI tailor
-                            the interview to specific requirements.
-                        </p>
+                        <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">
+                            Reference Document <span className="text-white/30">(Optional)</span>
+                        </h2>
 
                         <div className="space-y-4">
-                            {/* Document Type */}
-                            <div>
-                                <label className="block text-sm text-gray-400 mb-2">Document Type</label>
-                                <div className="flex gap-4">
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            value="JobDescription"
-                                            checked={referenceType === 'JobDescription'}
-                                            onChange={(e) => setReferenceType(e.target.value as any)}
-                                            className="w-4 h-4"
-                                        />
-                                        <span>Job Description</span>
-                                    </label>
-                                    <label className="flex items-center gap-2 cursor-pointer">
-                                        <input
-                                            type="radio"
-                                            value="SamplePaper"
-                                            checked={referenceType === 'SamplePaper'}
-                                            onChange={(e) => setReferenceType(e.target.value as any)}
-                                            className="w-4 h-4"
-                                        />
-                                        <span>Sample Questions</span>
-                                    </label>
-                                </div>
+                            <div className="flex gap-6">
+                                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                    <input
+                                        type="radio"
+                                        value="JobDescription"
+                                        checked={referenceType === 'JobDescription'}
+                                        onChange={(e) => setReferenceType(e.target.value as any)}
+                                        className="w-3 h-3"
+                                    />
+                                    <span className="text-white/60">Job Description</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                                    <input
+                                        type="radio"
+                                        value="SamplePaper"
+                                        checked={referenceType === 'SamplePaper'}
+                                        onChange={(e) => setReferenceType(e.target.value as any)}
+                                        className="w-3 h-3"
+                                    />
+                                    <span className="text-white/60">Sample Questions</span>
+                                </label>
                             </div>
 
-                            {/* File Upload */}
-                            <div className="border-2 border-dashed border-white/10 rounded-lg p-6 text-center hover:border-cyan-500/50 transition-all">
+                            <div className="border border-dashed border-white/10 rounded p-6 text-center hover:border-white/20 transition-all">
                                 <input
                                     type="file"
                                     onChange={handleFileChange}
@@ -200,15 +185,15 @@ export const InterviewSetupPage = () => {
                                 <label htmlFor="reference-upload" className="cursor-pointer">
                                     {referenceFile ? (
                                         <div>
-                                            <div className="text-4xl mb-2">📄</div>
-                                            <p className="font-semibold">{referenceFile.name}</p>
-                                            <p className="text-sm text-gray-400 mt-1">Click to change</p>
+                                            <div className="text-2xl mb-2 opacity-50">📄</div>
+                                            <p className="text-sm text-white/80">{referenceFile.name}</p>
+                                            <p className="text-xs text-white/30 mt-1">Click to change</p>
                                         </div>
                                     ) : (
                                         <div>
-                                            <div className="text-4xl mb-2">📎</div>
-                                            <p className="font-semibold">Click to upload reference document</p>
-                                            <p className="text-sm text-gray-400 mt-1">TXT, MD, or PDF files</p>
+                                            <div className="text-2xl mb-2 opacity-30">📎</div>
+                                            <p className="text-sm text-white/50">Upload reference document</p>
+                                            <p className="text-xs text-white/30 mt-1">TXT, MD, or PDF</p>
                                         </div>
                                     )}
                                 </label>
@@ -216,31 +201,22 @@ export const InterviewSetupPage = () => {
                         </div>
                     </GlassCard>
 
-                    {/* Action Buttons */}
+                    {/* Actions */}
                     <div className="flex gap-4">
                         <button
                             onClick={() => navigate('/resumes')}
-                            className="px-6 py-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all"
+                            className="btn-secondary text-sm"
                         >
-                            ← Back to Resumes
+                            ← Back
                         </button>
-                        <NeonButton
+                        <button
                             onClick={handleStartInterview}
                             disabled={uploading}
-                            className="flex-1"
+                            className="btn-primary flex-1 text-sm"
                         >
-                            {uploading ? 'Starting Interview...' : 'Start Interview →'}
-                        </NeonButton>
+                            {uploading ? 'Starting...' : 'Start Interview →'}
+                        </button>
                     </div>
-
-                    {/* Info */}
-                    <GlassCard className="p-4 bg-purple-500/5 border-purple-500/20">
-                        <p className="text-sm text-gray-400">
-                            💡 <strong>Tip:</strong> The more specific your instructions, the better the AI can
-                            tailor the interview to your needs. Reference documents help the AI understand
-                            the context and ask relevant questions.
-                        </p>
-                    </GlassCard>
                 </div>
             </main>
         </div>

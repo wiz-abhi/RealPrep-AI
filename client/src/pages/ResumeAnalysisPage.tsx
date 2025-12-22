@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { GlassCard } from '../components/ui/GlassCard';
 import { ScannerOverlay } from '../components/ui/ScannerOverlay';
-import { NeonButton } from '../components/ui/NeonButton';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,13 +12,11 @@ export const ResumeAnalysisPage = () => {
 
     const [analyzing, setAnalyzing] = useState(true);
     const [progress, setProgress] = useState(0);
-    const [starting, setStarting] = useState(false);
     const [resumeId, setResumeId] = useState(existingResumeId);
     const [skills, setSkills] = useState(existingSkills || []);
     const [error, setError] = useState('');
 
     useEffect(() => {
-        // If we have a file, upload it
         if (file && !resumeId) {
             uploadFile();
         }
@@ -31,7 +28,6 @@ export const ResumeAnalysisPage = () => {
         try {
             let content: string;
 
-            // Handle PDF files
             if (fileType === 'application/pdf') {
                 const arrayBuffer = await file.arrayBuffer();
                 const base64 = btoa(
@@ -39,7 +35,6 @@ export const ResumeAnalysisPage = () => {
                 );
                 content = `data:application/pdf;base64,${base64}`;
             } else {
-                // Handle text files
                 content = await new Promise<string>((resolve, reject) => {
                     const reader = new FileReader();
                     reader.onload = (e) => resolve(e.target?.result as string);
@@ -77,7 +72,6 @@ export const ResumeAnalysisPage = () => {
     };
 
     useEffect(() => {
-        // Simulate scanning visual
         const interval = setInterval(() => {
             setProgress(prev => {
                 if (prev >= 100) {
@@ -95,99 +89,74 @@ export const ResumeAnalysisPage = () => {
             setError('Resume not ready. Please try uploading again.');
             return;
         }
-
-        setStarting(true);
-        try {
-            const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/interview/start', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    userId: user.id,
-                    resumeId: resumeId,
-                    instructionPrompt: "Focus on my weak areas identified in the resume."
-                })
-            });
-
-            const data = await res.json();
-            console.log('Start interview response:', data);
-
-            if (data.success) {
-                navigate('/interview', {
-                    state: {
-                        sessionId: data.data.sessionId,
-                        agentArgs: data.data.agentArgs
-                    }
-                });
-            } else {
-                setError(data.error || 'Failed to start interview');
-            }
-        } catch (err) {
-            console.error("Failed to start", err);
-            setError('Failed to start interview. Please try again.');
-        } finally {
-            setStarting(false);
-        }
+        navigate('/interview-setup', { state: { resumeId, skills } });
     };
 
     return (
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-8 h-[80vh]">
-            {/* Left Side: Real-time Insights */}
-            <GlassCard className="flex flex-col gap-6">
-                <h2 className="text-2xl font-bold flex items-center gap-2">
-                    {error ? '❌ Upload Failed' : analyzing ? <><span className="animate-pulse">⚡</span> Analysis In Progress</> : "✅ Analysis Complete"}
+        <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-6 min-h-screen pt-32 px-6 pb-20">
+            {/* Left: Insights */}
+            <GlassCard className="flex flex-col gap-6 p-6">
+                <h2 className="text-lg font-light flex items-center gap-2">
+                    {error ? '❌ Upload Failed' : analyzing ? (
+                        <><span className="animate-pulse">⚡</span> Analyzing...</>
+                    ) : "✅ Analysis Complete"}
                 </h2>
 
-                {error && <p className="text-red-400 text-sm">{error}</p>}
+                {error && <p className="text-sm text-white/50">{error}</p>}
 
                 <div className="space-y-4">
                     <div className="space-y-2">
-                        <div className="flex justify-between text-sm text-gray-400">
-                            <span>{analyzing ? "Scanning Resume..." : "Ready to Interview"}</span>
+                        <div className="flex justify-between text-xs text-white/40">
+                            <span>{analyzing ? "Scanning..." : "Ready"}</span>
                             <span>{progress}%</span>
                         </div>
-                        <div className="h-2 bg-gray-800 rounded-full overflow-hidden">
+                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
                             <div
-                                className="h-full bg-gradient-to-r from-[#00f3ff] to-[#bc13fe] transition-all duration-100"
+                                className="h-full bg-white/40 transition-all duration-100"
                                 style={{ width: `${progress}%` }}
                             />
                         </div>
                     </div>
 
                     <div className="space-y-3 pt-4">
-                        <h3 className="tex-sm uppercase tracking-widest text-gray-500">Detected Skills</h3>
+                        <h3 className="text-[10px] uppercase tracking-widest text-white/30">Detected Skills</h3>
                         <div className="flex flex-wrap gap-2">
                             {skills && skills.map((skill: string, i: number) => (
                                 progress > (i * 10) && (
-                                    <span key={i} className="px-3 py-1 rounded bg-[#00f3ff]/10 text-[#00f3ff] text-xs border border-[#00f3ff]/20 animate-fade-in">
+                                    <span
+                                        key={i}
+                                        className="px-2 py-1 rounded bg-white/5 text-white/60 text-[10px] border border-white/5"
+                                    >
                                         {skill}
                                     </span>
                                 )
                             ))}
-                            {!skills && <span className="text-gray-500 text-sm">No skills detected or mock mode.</span>}
+                            {(!skills || skills.length === 0) && (
+                                <span className="text-white/30 text-xs">No skills detected yet.</span>
+                            )}
                         </div>
                     </div>
                 </div>
 
                 {!analyzing && resumeId && !error && (
-                    <NeonButton onClick={handleStartInterview} className="mt-auto w-full justify-center" disabled={starting}>
-                        {starting ? "Initializing Agent..." : "Start Interview Session →"}
-                    </NeonButton>
+                    <button
+                        onClick={handleStartInterview}
+                        className="btn-primary mt-auto w-full text-sm"
+                    >
+                        Continue to Setup →
+                    </button>
                 )}
             </GlassCard>
 
-            {/* Right Side: Resume Preview with Scanner */}
+            {/* Right: Preview */}
             <GlassCard className="relative p-0 overflow-hidden flex items-center justify-center bg-white/5">
                 <ScannerOverlay active={analyzing} />
 
-                <div className="text-center space-y-4 opacity-50">
-                    <div className="w-20 h-24 border-2 border-dashed border-gray-600 rounded mx-auto flex items-center justify-center">
+                <div className="text-center space-y-4 opacity-40">
+                    <div className="w-16 h-20 border border-dashed border-white/20 rounded mx-auto flex items-center justify-center text-2xl">
                         📄
                     </div>
-                    <p className="text-sm">{fileName || 'Resume Preview'}</p>
+                    <p className="text-xs text-white/50">{fileName || 'Resume Preview'}</p>
                 </div>
             </GlassCard>
         </div>

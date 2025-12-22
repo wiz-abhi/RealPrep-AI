@@ -68,6 +68,12 @@ export const useHumeVision = () => {
         }
     }, []);
 
+    // Debug logging
+    useState(() => {
+        const key = import.meta.env.VITE_HUME_API_KEY;
+        console.log('[ENV CHECK] VITE_HUME_API_KEY:', key ? `Present (${key.slice(0, 5)}...)` : 'MISSING/UNDEFINED');
+    });
+
     return {
         connect,
         disconnect,

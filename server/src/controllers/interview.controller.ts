@@ -7,6 +7,21 @@ import { fetchAccessToken } from 'hume';
 
 const gemini = new GeminiService();
 
+// Helper for DB retry
+const retryDbOperation = async <T>(operation: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
+    try {
+        return await operation();
+    } catch (error: any) {
+        // Retry on P1001 (Can't reach db) or P2024 (Timeout)
+        if (retries > 0 && (error.code === 'P1001' || error.code === 'P2024')) {
+            console.warn(`DB Error ${error.code}. Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return retryDbOperation(operation, retries - 1, delay * 2);
+        }
+        throw error;
+    }
+};
+
 export const startSession = async (req: Request, res: Response) => {
     try {
         const { userId, resumeId, instructionPrompt } = req.body;
@@ -16,9 +31,9 @@ export const startSession = async (req: Request, res: Response) => {
         }
 
         // Get resume
-        const resume = await prisma.resume.findUnique({
+        const resume = await retryDbOperation(() => prisma.resume.findUnique({
             where: { id: resumeId }
-        });
+        }));
 
         if (!resume) {
             return res.status(404).json({ error: 'Resume not found' });
@@ -42,10 +57,10 @@ Return ONLY a JSON array of skills, like: ["JavaScript", "React", "Node.js"]`;
                 skills = JSON.parse(skillsText);
 
                 // Update resume with extracted skills
-                await prisma.resume.update({
+                await retryDbOperation(() => prisma.resume.update({
                     where: { id: resumeId },
                     data: { skills }
-                });
+                }));
             } catch (error) {
                 console.error('Skill extraction error:', error);
                 skills = ['Communication', 'Problem Solving', 'Technical Skills'];
@@ -66,7 +81,7 @@ Generate a natural, conversational opening question. Be specific and reference t
         const initialMessage = await gemini.generateText(initialPrompt);
 
         // Create session
-        const session = await prisma.session.create({
+        const session = await retryDbOperation(() => prisma.session.create({
             data: {
                 userId,
                 type: 'Technical',
@@ -74,17 +89,17 @@ Generate a natural, conversational opening question. Be specific and reference t
                 score: 0,
                 feedback: {}
             }
-        });
+        }));
 
         // Store initial message in transcript
-        await prisma.transcript.create({
+        await retryDbOperation(() => prisma.transcript.create({
             data: {
                 sessionId: session.id,
                 sender: 'ai',
                 text: initialMessage,
                 timestamp: new Date()
             }
-        });
+        }));
 
         res.json({
             success: true,
@@ -108,13 +123,13 @@ export const chat = async (req: Request, res: Response) => {
         const { sessionId, message } = req.body;
 
         // Store user message
-        await prisma.transcript.create({
+        await retryDbOperation(() => prisma.transcript.create({
             data: {
                 sessionId,
                 sender: 'user',
                 text: message
             }
-        });
+        }));
 
         // Get conversation history
         const history = await prisma.transcript.findMany({
@@ -123,10 +138,19 @@ export const chat = async (req: Request, res: Response) => {
         });
 
         // Build conversation for Gemini
-        const conversation = history.map(t => ({
+        let conversation = history.map(t => ({
             role: t.sender === 'user' ? 'user' : 'model',
             parts: t.text // String, not array
         }));
+
+        // Google Gemini API requires the first message in history to be from 'user'.
+        // If the first message is from 'model' (e.g. initial greeting), likely remove it or handle it.
+        // We will remove leading 'model' messages from the history array sent to startChat.
+        // The context of the greeting is usually less critical than the 'systemInstruction' (not yet used fully here)
+        // or just the flow.
+        while (conversation.length > 0 && conversation[0].role === 'model') {
+            conversation.shift();
+        }
 
         // Get AI response
         const aiResponse = await gemini.generateResponse(conversation, message);
@@ -155,7 +179,7 @@ export const endSession = async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.body;
 
-        await prisma.session.update({
+        await retryDbOperation(() => prisma.session.update({
             where: { id: sessionId },
             data: {
                 status: 'completed',
@@ -166,7 +190,7 @@ export const endSession = async (req: Request, res: Response) => {
                     improvements: ['Could elaborate more on system design trade-offs']
                 })
             }
-        });
+        }));
 
         res.json({ success: true });
     } catch (error) {

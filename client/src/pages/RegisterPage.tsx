@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { GlassCard } from '../components/ui/GlassCard';
-import { NeonButton } from '../components/ui/NeonButton';
 
 export const RegisterPage = () => {
     const navigate = useNavigate();
@@ -21,50 +20,61 @@ export const RegisterPage = () => {
     };
 
     return (
-        <div className="min-h-[80vh] flex items-center justify-center">
+        <div className="min-h-screen flex items-center justify-center px-4 pt-20">
             <GlassCard className="w-full max-w-md p-8">
-                <h2 className="text-3xl font-bold mb-6 text-center">Create Account</h2>
-                {error && <div className="bg-red-500/10 text-red-500 p-3 rounded-lg mb-4 text-center">{error}</div>}
+                <div className="text-center mb-8">
+                    <h2 className="text-2xl font-light text-white">Create Account</h2>
+                    <p className="text-sm text-white/40 mt-2">Get started with your practice</p>
+                </div>
 
-                <form onSubmit={handleSubmit} className="space-y-6">
+                {error && (
+                    <div className="bg-white/5 border border-white/10 text-white/70 p-3 rounded text-sm text-center mb-6">
+                        {error}
+                    </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-5">
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">Name</label>
+                        <label className="block text-xs uppercase tracking-wider text-white/30 mb-2">Name</label>
                         <input
                             type="text"
-                            className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-white focus:border-cyan-500 transition-colors outline-none"
+                            className="w-full bg-white/5 border border-white/10 rounded p-3 text-white focus:border-white/30 transition-colors outline-none text-sm"
                             value={formData.name}
                             onChange={e => setFormData({ ...formData, name: e.target.value })}
                             required
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">Email</label>
+                        <label className="block text-xs uppercase tracking-wider text-white/30 mb-2">Email</label>
                         <input
                             type="email"
-                            className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-white focus:border-cyan-500 transition-colors outline-none"
+                            className="w-full bg-white/5 border border-white/10 rounded p-3 text-white focus:border-white/30 transition-colors outline-none text-sm"
                             value={formData.email}
                             onChange={e => setFormData({ ...formData, email: e.target.value })}
                             required
                         />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-gray-400 mb-2">Password</label>
+                        <label className="block text-xs uppercase tracking-wider text-white/30 mb-2">Password</label>
                         <input
                             type="password"
-                            className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-white focus:border-cyan-500 transition-colors outline-none"
+                            className="w-full bg-white/5 border border-white/10 rounded p-3 text-white focus:border-white/30 transition-colors outline-none text-sm"
                             value={formData.password}
                             onChange={e => setFormData({ ...formData, password: e.target.value })}
                             required
                         />
                     </div>
 
-                    <NeonButton variant="primary" className="w-full justify-center">
+                    <button type="submit" className="btn-primary w-full text-sm">
                         Sign Up
-                    </NeonButton>
+                    </button>
                 </form>
 
-                <p className="mt-6 text-center text-gray-400">
-                    Already have an account? <Link to="/login" className="text-cyan-400 hover:underline">Log in</Link>
+                <p className="mt-6 text-center text-sm text-white/40">
+                    Already have an account?{' '}
+                    <Link to="/login" className="text-white/70 hover:text-white transition-colors">
+                        Log in
+                    </Link>
                 </p>
             </GlassCard>
         </div>
