@@ -10,11 +10,12 @@ import { Mic, Square, Code, MessageSquare, X } from 'lucide-react';
 export const InterviewPage = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { sessionId } = location.state || {};
+    const { sessionId, agentArgs } = location.state || {};
     const { user } = useAuth();
 
     const [showTranscript, setShowTranscript] = useState(false);
     const [showEditor, setShowEditor] = useState(false);
+    const [hasPlayedInitial, setHasPlayedInitial] = useState(false);
 
     const isGridView = showTranscript && showEditor;
 
@@ -38,6 +39,18 @@ export const InterviewPage = () => {
 
     const webcamRef = useRef<Webcam>(null);
     const [messages, setMessages] = useState<any[]>([]);
+
+    // Auto-play AI's initial greeting when page loads
+    useEffect(() => {
+        if (agentArgs?.initialMessage && !hasPlayedInitial) {
+            setHasPlayedInitial(true);
+            setMessages([{ sender: 'ai', text: agentArgs.initialMessage }]);
+            // Small delay to ensure audio context is ready
+            setTimeout(() => {
+                playResponse(agentArgs.initialMessage);
+            }, 500);
+        }
+    }, [agentArgs, hasPlayedInitial, playResponse]);
 
     useEffect(() => {
         connectVision();

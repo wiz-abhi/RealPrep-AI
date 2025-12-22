@@ -1,18 +1,17 @@
 import { Request, Response } from 'express';
 import { RAGService } from '../services/rag';
-import { GeminiService } from '../services/gemini';
+import { GeminiService, INTERVIEWER_PERSONAS } from '../services/gemini';
 import prisma from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import { fetchAccessToken } from 'hume';
 
-const gemini = new GeminiService();
+const gemini = new GeminiService('gemini-2.5-pro-preview-06-05');
 
 // Helper for DB retry
 const retryDbOperation = async <T>(operation: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
     try {
         return await operation();
     } catch (error: any) {
-        // Retry on P1001 (Can't reach db) or P2024 (Timeout)
         if (retries > 0 && (error.code === 'P1001' || error.code === 'P2024')) {
             console.warn(`DB Error ${error.code}. Retrying in ${delay}ms...`);
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -22,9 +21,27 @@ const retryDbOperation = async <T>(operation: () => Promise<T>, retries = 3, del
     }
 };
 
+// Build system instruction with resume context
+const buildSystemInstruction = (persona: string, resumeContext: string, skills: string[], interviewType: string) => {
+    const basePersona = INTERVIEWER_PERSONAS[interviewType as keyof typeof INTERVIEWER_PERSONAS] || INTERVIEWER_PERSONAS.technical;
+
+    return `${basePersona}
+
+CANDIDATE CONTEXT:
+The candidate has the following skills: ${skills.join(', ')}
+
+Resume highlights:
+${resumeContext}
+
+INTERVIEW FOCUS:
+${persona || 'Conduct a comprehensive technical interview covering their skills and experience.'}
+
+Remember: You are conducting a real interview. Be conversational, ask follow-up questions, and adapt based on their responses.`;
+};
+
 export const startSession = async (req: Request, res: Response) => {
     try {
-        const { userId, resumeId, instructionPrompt } = req.body;
+        const { userId, resumeId, instructionPrompt, interviewType = 'technical' } = req.body;
 
         if (!userId || !resumeId) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -56,7 +73,6 @@ Return ONLY a JSON array of skills, like: ["JavaScript", "React", "Node.js"]`;
                 const skillsText = await gemini.generateText(skillExtractionPrompt);
                 skills = JSON.parse(skillsText);
 
-                // Update resume with extracted skills
                 await retryDbOperation(() => prisma.resume.update({
                     where: { id: resumeId },
                     data: { skills }
@@ -67,31 +83,40 @@ Return ONLY a JSON array of skills, like: ["JavaScript", "React", "Node.js"]`;
             }
         }
 
-        // Generate initial interview question using RAG context and instruction prompt
-        const initialPrompt = `You are an experienced technical interviewer. 
-        
-User's Instructions: ${instructionPrompt || 'Conduct a comprehensive technical interview'}
+        // Build system instruction
+        const systemInstruction = buildSystemInstruction(
+            instructionPrompt,
+            ragContext,
+            skills,
+            interviewType
+        );
 
-Based on the candidate's resume context below, ask an engaging opening question that addresses their instructions:
+        // Generate AI's opening greeting (AI speaks first!)
+        const candidateContext = `
+Skills: ${skills.join(', ')}
+Resume Summary: ${ragContext.substring(0, 500)}...
+Interview Type: ${interviewType}
+Focus: ${instructionPrompt || 'General technical interview'}
+`;
 
-${ragContext}
+        const initialMessage = await gemini.generateInitialGreeting(systemInstruction, candidateContext);
 
-Generate a natural, conversational opening question. Be specific and reference their actual experience.`;
-
-        const initialMessage = await gemini.generateText(initialPrompt);
-
-        // Create session
+        // Create session with system instruction stored
         const session = await retryDbOperation(() => prisma.session.create({
             data: {
                 userId,
-                type: 'Technical',
+                type: interviewType.charAt(0).toUpperCase() + interviewType.slice(1),
                 status: 'active',
                 score: 0,
-                feedback: {}
+                feedback: {
+                    systemInstruction,
+                    resumeContext: ragContext,
+                    skills
+                }
             }
         }));
 
-        // Store initial message in transcript
+        // Store AI's initial greeting in transcript
         await retryDbOperation(() => prisma.transcript.create({
             data: {
                 sessionId: session.id,
@@ -105,10 +130,12 @@ Generate a natural, conversational opening question. Be specific and reference t
             success: true,
             data: {
                 sessionId: session.id,
+                initialMessage, // AI speaks first!
                 agentArgs: {
                     initialMessage,
                     skills,
-                    instructionPrompt
+                    instructionPrompt,
+                    interviewType
                 }
             }
         });
@@ -120,7 +147,16 @@ Generate a natural, conversational opening question. Be specific and reference t
 
 export const chat = async (req: Request, res: Response) => {
     try {
-        const { sessionId, message } = req.body;
+        const { sessionId, message, emotions } = req.body;
+
+        // Get session with system instruction
+        const session = await prisma.session.findUnique({
+            where: { id: sessionId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
 
         // Store user message
         await retryDbOperation(() => prisma.transcript.create({
@@ -137,23 +173,34 @@ export const chat = async (req: Request, res: Response) => {
             orderBy: { timestamp: 'asc' }
         });
 
-        // Build conversation for Gemini
-        let conversation = history.map(t => ({
+        // Build conversation for Gemini (excluding the just-added user message since we'll send it separately)
+        let conversation = history.slice(0, -1).map(t => ({
             role: t.sender === 'user' ? 'user' : 'model',
-            parts: t.text // String, not array
+            parts: t.text
         }));
 
-        // Google Gemini API requires the first message in history to be from 'user'.
-        // If the first message is from 'model' (e.g. initial greeting), likely remove it or handle it.
-        // We will remove leading 'model' messages from the history array sent to startChat.
-        // The context of the greeting is usually less critical than the 'systemInstruction' (not yet used fully here)
-        // or just the flow.
+        // Remove leading 'model' messages (Gemini requires first message to be 'user')
         while (conversation.length > 0 && conversation[0].role === 'model') {
             conversation.shift();
         }
 
-        // Get AI response
-        const aiResponse = await gemini.generateResponse(conversation, message);
+        // Get system instruction from session feedback
+        const feedback = session.feedback as any;
+        const systemInstruction = feedback?.systemInstruction || INTERVIEWER_PERSONAS.technical;
+
+        // Add emotion context if available
+        let emotionContext = '';
+        if (emotions && emotions.length > 0) {
+            const topEmotions = emotions.slice(0, 3).map((e: any) => `${e.name}: ${Math.round(e.score * 100)}%`).join(', ');
+            emotionContext = `\n\n[Candidate's current emotional state: ${topEmotions}. Adapt your tone accordingly.]`;
+        }
+
+        // Get AI response with system instruction
+        const aiResponse = await gemini.generateInterviewResponse(
+            systemInstruction + emotionContext,
+            conversation,
+            message
+        );
 
         // Store AI response
         await prisma.transcript.create({
@@ -166,7 +213,7 @@ export const chat = async (req: Request, res: Response) => {
 
         res.json({
             success: true,
-            data: { message: aiResponse }
+            data: { response: aiResponse }
         });
 
     } catch (error) {
@@ -179,50 +226,65 @@ export const endSession = async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.body;
 
-        await retryDbOperation(() => prisma.session.update({
+        // Get all transcripts
+        const transcripts = await prisma.transcript.findMany({
+            where: { sessionId },
+            orderBy: { timestamp: 'asc' }
+        });
+
+        // Generate evaluation
+        const conversationText = transcripts.map(t =>
+            `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
+        ).join('\n\n');
+
+        const evaluationPrompt = `Evaluate this interview transcript and provide a score from 0-100 and detailed feedback.
+
+TRANSCRIPT:
+${conversationText}
+
+Provide your response as JSON:
+{
+    "score": <number 0-100>,
+    "summary": "<brief overall assessment>",
+    "strengths": ["<strength 1>", "<strength 2>"],
+    "improvements": ["<area 1>", "<area 2>"],
+    "technicalAccuracy": <number 0-100>,
+    "communicationSkills": <number 0-100>,
+    "problemSolving": <number 0-100>
+}`;
+
+        const evaluationText = await gemini.generateText(evaluationPrompt);
+        let evaluation;
+        try {
+            evaluation = JSON.parse(evaluationText);
+        } catch {
+            evaluation = { score: 70, summary: 'Interview completed', strengths: [], improvements: [] };
+        }
+
+        // Update session
+        await prisma.session.update({
             where: { id: sessionId },
             data: {
                 status: 'completed',
-                score: 85,
-                feedback: JSON.stringify({
-                    summary: 'Great interview! Strong technical skills demonstrated.',
-                    strengths: ['Clear communication', 'Deep technical knowledge'],
-                    improvements: ['Could elaborate more on system design trade-offs']
-                })
+                score: evaluation.score,
+                feedback: evaluation
             }
-        }));
+        });
 
-        res.json({ success: true });
+        res.json({
+            success: true,
+            data: evaluation
+        });
+
     } catch (error) {
         console.error('End session error:', error);
         res.status(500).json({ error: 'Failed to end session' });
     }
 };
 
-export const getAccessToken = async (req: Request, res: Response) => {
-    try {
-        const apiKey = process.env.HUME_API_KEY;
-        const secretKey = process.env.HUME_SECRET_KEY;
-
-        if (!apiKey || !secretKey) {
-            return res.status(500).json({ error: 'Hume API keys not configured' });
-        }
-
-        const accessToken = await fetchAccessToken({
-            apiKey,
-            secretKey
-        });
-
-        res.json({ accessToken });
-    } catch (error) {
-        console.error('Hume token error:', error);
-        res.status(500).json({ error: 'Failed to fetch Hume access token' });
-    }
-};
-
 export const getUserSessions = async (req: Request, res: Response) => {
     try {
-        const userId = req.userId; // From auth middleware
+        const userId = req.userId;
 
         const sessions = await prisma.session.findMany({
             where: { userId },
@@ -275,7 +337,6 @@ export const clearHistory = async (req: Request, res: Response) => {
     try {
         const userId = req.userId;
 
-        // Delete all transcripts for user's sessions first
         const sessions = await prisma.session.findMany({
             where: { userId },
             select: { id: true }
@@ -287,7 +348,6 @@ export const clearHistory = async (req: Request, res: Response) => {
             where: { sessionId: { in: sessionIds } }
         });
 
-        // Then delete all sessions
         await prisma.session.deleteMany({
             where: { userId }
         });
@@ -296,5 +356,18 @@ export const clearHistory = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Clear history error:', error);
         res.status(500).json({ error: 'Failed to clear history' });
+    }
+};
+
+export const getAccessToken = async (req: Request, res: Response) => {
+    try {
+        const accessToken = await fetchAccessToken({
+            apiKey: process.env.HUME_API_KEY!,
+            secretKey: process.env.HUME_SECRET_KEY!
+        });
+        res.json({ accessToken });
+    } catch (error) {
+        console.error('Hume token error:', error);
+        res.status(500).json({ error: 'Failed to get Hume token' });
     }
 };

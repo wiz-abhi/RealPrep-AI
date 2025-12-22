@@ -80,12 +80,12 @@ export class RAGService {
         }
     }
 
-    static async retrieveContext(query: string, resumeId: string, limit: number = 3) {
+    static async retrieveContext(resumeId: string, query: string, limit: number = 3): Promise<string> {
         const queryEmbedding = await gemini.generateEmbedding(query);
         const vectorString = `[${queryEmbedding.join(',')}]`;
 
         // Semantic search over Resume Chunks
-        const resumeChunks = await prisma.$queryRaw`
+        const resumeChunks: any[] = await prisma.$queryRaw`
       SELECT content, 1 - (embedding <=> ${vectorString}::vector) as similarity
       FROM "ResumeChunk"
       WHERE "resumeId" = ${resumeId}
@@ -94,16 +94,17 @@ export class RAGService {
     `;
 
         // Semantic search over Reference Docs
-        const refChunks = await prisma.$queryRaw`
+        const refChunks: any[] = await prisma.$queryRaw`
       SELECT content, title, 1 - (embedding <=> ${vectorString}::vector) as similarity
       FROM "ReferenceDoc"
       ORDER BY embedding <=> ${vectorString}::vector
       LIMIT ${limit}
     `;
 
-        return {
-            resume: resumeChunks,
-            reference: refChunks
-        };
+        // Format into a readable context string
+        const resumeContext = resumeChunks.map(c => c.content).join('\n\n');
+        const refContext = refChunks.map(c => `[${c.title}]: ${c.content}`).join('\n\n');
+
+        return `RESUME CONTENT:\n${resumeContext}\n\nREFERENCE MATERIAL:\n${refContext}`;
     }
 }
