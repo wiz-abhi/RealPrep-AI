@@ -5,7 +5,8 @@ import prisma from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import { fetchAccessToken } from 'hume';
 
-const gemini = new GeminiService('gemini-2.5-pro-preview-06-05');
+const gemini = new GeminiService('gemini-3-flash-preview');
+const reportGemini = new GeminiService('gemini-2.5-flash-lite');
 
 // Helper for DB retry
 const retryDbOperation = async <T>(operation: () => Promise<T>, retries = 3, delay = 1000): Promise<T> => {
@@ -253,7 +254,7 @@ Provide your response as JSON:
     "problemSolving": <number 0-100>
 }`;
 
-        const evaluationText = await gemini.generateText(evaluationPrompt);
+        const evaluationText = await reportGemini.generateText(evaluationPrompt);
         let evaluation;
         try {
             evaluation = JSON.parse(evaluationText);

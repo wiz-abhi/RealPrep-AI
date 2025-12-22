@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Webcam from 'react-webcam';
 import { CodeEditor } from '../components/ui/CodeEditor';
 import { useElevenLabs } from '../hooks/useElevenLabs';
 import { useHumeVision } from '../hooks/useHumeVision';
-import { Mic, Square, Code, MessageSquare, X } from 'lucide-react';
+import { Mic, MicOff, Square, Code, MessageSquare, X, Send } from 'lucide-react';
 
 export const InterviewPage = () => {
     const location = useLocation();
@@ -13,11 +13,16 @@ export const InterviewPage = () => {
     const { sessionId, agentArgs } = location.state || {};
     const { user } = useAuth();
 
-    const [showTranscript, setShowTranscript] = useState(false);
+    const [showChat, setShowChat] = useState(false);
     const [showEditor, setShowEditor] = useState(false);
+    const [voiceMode, setVoiceMode] = useState(true);
     const [hasPlayedInitial, setHasPlayedInitial] = useState(false);
+    const [textInput, setTextInput] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const chatEndRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
-    const isGridView = showTranscript && showEditor;
+    const isGridView = showChat && showEditor;
 
     const {
         transcript,
@@ -40,17 +45,23 @@ export const InterviewPage = () => {
     const webcamRef = useRef<Webcam>(null);
     const [messages, setMessages] = useState<any[]>([]);
 
+    // Scroll to bottom when messages change
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
     // Auto-play AI's initial greeting when page loads
     useEffect(() => {
         if (agentArgs?.initialMessage && !hasPlayedInitial) {
             setHasPlayedInitial(true);
             setMessages([{ sender: 'ai', text: agentArgs.initialMessage }]);
-            // Small delay to ensure audio context is ready
-            setTimeout(() => {
-                playResponse(agentArgs.initialMessage);
-            }, 500);
+            if (voiceMode) {
+                setTimeout(() => {
+                    playResponse(agentArgs.initialMessage);
+                }, 500);
+            }
         }
-    }, [agentArgs, hasPlayedInitial, playResponse]);
+    }, [agentArgs, hasPlayedInitial, playResponse, voiceMode]);
 
     useEffect(() => {
         connectVision();
@@ -70,15 +81,18 @@ export const InterviewPage = () => {
         return () => clearInterval(interval);
     }, [sendFrame]);
 
+    // Handle voice transcript when recording stops
     useEffect(() => {
-        if (!isRecording && transcript) {
+        if (!isRecording && transcript && voiceMode) {
             handleSendMessage(transcript);
         }
     }, [isRecording]);
 
-    const handleSendMessage = async (text: string) => {
-        if (!text.trim()) return;
+    const handleSendMessage = useCallback(async (text: string) => {
+        if (!text.trim() || isLoading) return;
         setMessages(prev => [...prev, { sender: 'user', text }]);
+        setTextInput('');
+        setIsLoading(true);
 
         try {
             const token = localStorage.getItem('token');
@@ -94,12 +108,27 @@ export const InterviewPage = () => {
             const data = await res.json();
             if (data.success) {
                 setMessages(prev => [...prev, { sender: 'ai', text: data.data.response }]);
-                playResponse(data.data.response);
+                if (voiceMode) {
+                    playResponse(data.data.response);
+                }
             }
         } catch (error) {
             console.error('Chat error:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [sessionId, emotions, voiceMode, playResponse, isLoading]);
+
+    const handleTextSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (textInput.trim()) {
+            handleSendMessage(textInput);
         }
     };
+
+    const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        setTextInput(e.target.value);
+    }, []);
 
     const handleEndInterview = async () => {
         try {
@@ -115,6 +144,64 @@ export const InterviewPage = () => {
         }
     };
 
+    // Toggle between voice and text mode
+    const toggleVoiceMode = () => {
+        setVoiceMode(!voiceMode);
+        if (voiceMode) {
+            setShowChat(true);
+        }
+    };
+
+    // Render messages list
+    const renderMessages = () => (
+        <>
+            {messages.map((m, i) => (
+                <div key={i} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                    <span className="text-[8px] mb-0.5 text-white/30">{m.sender === 'user' ? 'You' : 'AI'}</span>
+                    <div className={`max-w-[90%] px-2 py-1.5 rounded text-[11px] leading-relaxed ${m.sender === 'user' ? 'bg-white/10 text-white/80' : 'bg-white/5 text-white/60'}`}>{m.text}</div>
+                </div>
+            ))}
+            {isRecording && voiceMode && (
+                <div className="flex flex-col items-end animate-pulse">
+                    <span className="text-[8px] mb-0.5 text-white/30">Speaking...</span>
+                    <div className="max-w-[90%] px-2 py-1 rounded text-[10px] bg-white/5 border border-dashed border-white/10 text-white/30">{transcript || "..."}</div>
+                </div>
+            )}
+            {isLoading && (
+                <div className="flex flex-col items-start">
+                    <span className="text-[8px] mb-0.5 text-white/30">AI</span>
+                    <div className="px-2 py-1 rounded text-[10px] bg-white/5 text-white/30 animate-pulse">Thinking...</div>
+                </div>
+            )}
+            <div ref={chatEndRef} />
+        </>
+    );
+
+    // Render text input form
+    const renderTextInput = () => (
+        <form onSubmit={handleTextSubmit} className="shrink-0 p-2 border-t border-white/5">
+            <div className="flex gap-2">
+                <input
+                    ref={inputRef}
+                    type="text"
+                    value={textInput}
+                    onChange={handleInputChange}
+                    placeholder="Type your response..."
+                    className="flex-1 bg-white/5 border border-white/10 rounded px-3 py-2 text-xs text-white placeholder-white/30 focus:outline-none focus:border-white/20"
+                    disabled={isLoading}
+                    autoFocus
+                />
+                <button
+                    type="submit"
+                    disabled={!textInput.trim() || isLoading}
+                    className="px-3 py-2 bg-white/10 border border-white/10 rounded hover:bg-white/15 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                >
+                    <Send size={14} className="text-white/70" />
+                </button>
+            </div>
+        </form>
+    );
+
     return (
         <div className="h-screen bg-black text-white flex flex-col">
             {/* Header */}
@@ -129,6 +216,9 @@ export const InterviewPage = () => {
                     <span className="text-[10px] text-white/30">
                         {isVisionConnected ? '● Vision' : '○ Connecting'}
                     </span>
+                    <span className={`text-[10px] px-2 py-0.5 rounded ${voiceMode ? 'bg-white/10 text-white/60' : 'bg-white/5 text-white/40'}`}>
+                        {voiceMode ? '🎤 Voice' : '⌨️ Text'}
+                    </span>
                 </div>
                 <button onClick={handleEndInterview} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5">
                     End Interview
@@ -139,9 +229,8 @@ export const InterviewPage = () => {
                 <div className="px-6 py-2 bg-white/5 text-xs text-white/50 border-b border-white/5">⚠ {audioError}</div>
             )}
 
-            {/* Main Area - Fixed Height */}
+            {/* Main Area */}
             <div className="flex-1 flex overflow-hidden">
-                {/* Content Area */}
                 <div className="flex-1 flex flex-col">
                     {/* Video/Grid Container */}
                     <div className="flex-1 p-4 overflow-hidden">
@@ -153,14 +242,6 @@ export const InterviewPage = () => {
                                     <Webcam ref={webcamRef} audio={false} className="w-full h-full object-cover" />
                                     <div className="absolute bottom-2 left-2 bg-black/70 px-2 py-0.5 rounded text-[10px] text-white/60">
                                         {(user as any)?.name || 'You'}
-                                    </div>
-                                    <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
-                                        {emotions.slice(0, 3).map((e: any, i) => (
-                                            <div key={i} className="bg-black/70 px-2 py-0.5 rounded text-[9px] flex items-center gap-1.5 border border-white/10">
-                                                <span className="text-white/50">{e.name}</span>
-                                                <div className="w-8 h-0.5 bg-white/10 rounded"><div className="h-full bg-white/50 rounded" style={{ width: `${e.score * 100}%` }} /></div>
-                                            </div>
-                                        ))}
                                     </div>
                                 </div>
 
@@ -176,23 +257,18 @@ export const InterviewPage = () => {
                                         </div>
                                     </div>
                                     <audio ref={audioRef} className="hidden" />
-                                    <div className="absolute bottom-2 left-2 bg-black/70 px-2 py-0.5 rounded text-[10px] text-white/60">AI Interviewer</div>
                                 </div>
 
-                                {/* Transcript */}
+                                {/* Chat */}
                                 <div className="bg-black/50 border border-white/10 rounded-lg overflow-hidden flex flex-col">
                                     <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
-                                        <span className="text-[10px] uppercase tracking-wider text-white/40">Transcript</span>
-                                        <button onClick={() => setShowTranscript(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
+                                        <span className="text-[10px] uppercase tracking-wider text-white/40">{voiceMode ? 'Transcript' : 'Chat'}</span>
+                                        <button onClick={() => setShowChat(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
                                     </div>
                                     <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                                        {messages.map((m, i) => (
-                                            <div key={i} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                                                <span className="text-[8px] mb-0.5 text-white/30">{m.sender === 'user' ? 'You' : 'AI'}</span>
-                                                <div className={`max-w-[90%] px-2 py-1 rounded text-[10px] ${m.sender === 'user' ? 'bg-white/10 text-white/80' : 'bg-white/5 text-white/60'}`}>{m.text}</div>
-                                            </div>
-                                        ))}
+                                        {renderMessages()}
                                     </div>
+                                    {!voiceMode && renderTextInput()}
                                 </div>
 
                                 {/* Code Editor */}
@@ -206,29 +282,70 @@ export const InterviewPage = () => {
                                     </div>
                                 </div>
                             </div>
+                        ) : !voiceMode ? (
+                            /* Text Mode - Chat alongside cam */
+                            <div className="w-full h-full flex gap-4">
+                                {/* User Cam - smaller */}
+                                <div className="w-1/3 relative bg-black border border-white/10 rounded-lg overflow-hidden">
+                                    <Webcam ref={webcamRef} audio={false} className="w-full h-full object-cover" />
+                                    <div className="absolute bottom-2 left-2 bg-black/70 px-2 py-0.5 rounded text-[10px] text-white/60">
+                                        {(user as any)?.name || 'You'}
+                                    </div>
+                                    <div className="absolute top-2 right-2 flex flex-col gap-1 items-end">
+                                        {emotions.slice(0, 3).map((e: any, i) => (
+                                            <div key={i} className="bg-black/70 px-2 py-0.5 rounded text-[9px] flex items-center gap-1.5 border border-white/10">
+                                                <span className="text-white/50">{e.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Chat Panel - main focus */}
+                                <div className="flex-1 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex flex-col">
+                                    <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
+                                        <span className="text-[10px] uppercase tracking-wider text-white/40">Chat</span>
+                                    </div>
+                                    <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                                        {renderMessages()}
+                                    </div>
+                                    {renderTextInput()}
+                                </div>
+
+                                {/* Center Icons */}
+                                <div className="w-14 shrink-0 flex flex-col items-center justify-center gap-3">
+                                    <button onClick={toggleVoiceMode} className={`p-2.5 rounded transition-all ${!voiceMode ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Toggle Voice/Text">
+                                        {voiceMode ? <Mic size={16} /> : <MicOff size={16} />}
+                                    </button>
+                                    <button onClick={() => setShowEditor(!showEditor)} className={`p-2.5 rounded transition-all ${showEditor ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Code Editor">
+                                        <Code size={16} />
+                                    </button>
+                                </div>
+
+                                {/* Code Editor Panel */}
+                                {showEditor && (
+                                    <div className="w-[35%] shrink-0 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex flex-col">
+                                        <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
+                                            <span className="text-[10px] uppercase tracking-wider text-white/40">Code Editor</span>
+                                            <button onClick={() => setShowEditor(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
+                                        </div>
+                                        <div className="flex-1 overflow-hidden">
+                                            <CodeEditor onCodeChange={() => { }} language="javascript" />
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
                         ) : (
-                            /* Default View */
+                            /* Voice Mode - Default View */
                             <div className="w-full h-full flex">
-                                {/* Transcript Panel */}
-                                {showTranscript && (
+                                {/* Chat Panel */}
+                                {showChat && (
                                     <div className="w-72 shrink-0 mr-4 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex flex-col">
                                         <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
                                             <span className="text-[10px] uppercase tracking-wider text-white/40">Transcript</span>
-                                            <button onClick={() => setShowTranscript(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
+                                            <button onClick={() => setShowChat(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
                                         </div>
                                         <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                                            {messages.map((m, i) => (
-                                                <div key={i} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                                                    <span className="text-[8px] mb-0.5 text-white/30">{m.sender === 'user' ? 'You' : 'AI'}</span>
-                                                    <div className={`max-w-[90%] px-2 py-1 rounded text-[10px] ${m.sender === 'user' ? 'bg-white/10 text-white/80' : 'bg-white/5 text-white/60'}`}>{m.text}</div>
-                                                </div>
-                                            ))}
-                                            {isRecording && (
-                                                <div className="flex flex-col items-end animate-pulse">
-                                                    <span className="text-[8px] mb-0.5 text-white/30">Speaking...</span>
-                                                    <div className="max-w-[90%] px-2 py-1 rounded text-[10px] bg-white/5 border border-dashed border-white/10 text-white/30">{transcript || "..."}</div>
-                                                </div>
-                                            )}
+                                            {renderMessages()}
                                         </div>
                                     </div>
                                 )}
@@ -249,8 +366,11 @@ export const InterviewPage = () => {
 
                                 {/* Center Icons */}
                                 <div className="w-14 shrink-0 flex flex-col items-center justify-center gap-3">
-                                    <button onClick={() => setShowTranscript(!showTranscript)} className={`p-2.5 rounded transition-all ${showTranscript ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Transcript">
+                                    <button onClick={() => setShowChat(!showChat)} className={`p-2.5 rounded transition-all ${showChat ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Transcript">
                                         <MessageSquare size={16} />
+                                    </button>
+                                    <button onClick={toggleVoiceMode} className={`p-2.5 rounded transition-all ${!voiceMode ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Toggle Voice/Text">
+                                        {voiceMode ? <Mic size={16} /> : <MicOff size={16} />}
                                     </button>
                                     <button onClick={() => setShowEditor(!showEditor)} className={`p-2.5 rounded transition-all ${showEditor ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Code Editor">
                                         <Code size={16} />
@@ -290,22 +410,38 @@ export const InterviewPage = () => {
 
                     {/* Controls Bar - Fixed at Bottom */}
                     <div className="h-16 shrink-0 flex items-center justify-center gap-4 border-t border-white/5">
-                        <button
-                            onClick={startRecording}
-                            disabled={isRecording}
-                            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-white/5 text-white/20' : 'bg-white/10 text-white hover:bg-white/15 border border-white/10'}`}
-                        >
-                            <Mic size={20} />
-                        </button>
-                        <button
-                            onClick={stopRecording}
-                            disabled={!isRecording}
-                            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${!isRecording ? 'bg-white/5 text-white/20' : 'bg-white/10 text-white hover:bg-white/15 border border-white/10'}`}
-                        >
-                            <Square size={16} />
-                        </button>
+                        {voiceMode ? (
+                            <>
+                                <button
+                                    onClick={startRecording}
+                                    disabled={isRecording}
+                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-white/5 text-white/20' : 'bg-white/10 text-white hover:bg-white/15 border border-white/10'}`}
+                                >
+                                    <Mic size={20} />
+                                </button>
+                                <button
+                                    onClick={stopRecording}
+                                    disabled={!isRecording}
+                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${!isRecording ? 'bg-white/5 text-white/20' : 'bg-white/10 text-white hover:bg-white/15 border border-white/10'}`}
+                                >
+                                    <Square size={16} />
+                                </button>
+                            </>
+                        ) : (
+                            <div className="flex items-center gap-2 text-xs text-white/40">
+                                <MicOff size={16} />
+                                <span>Text mode active - use chat to respond</span>
+                            </div>
+                        )}
 
                         <div className="w-px h-8 bg-white/10 mx-2" />
+
+                        <button
+                            onClick={toggleVoiceMode}
+                            className={`px-4 py-2 text-xs border rounded-full transition-all ${voiceMode ? 'text-white/60 border-white/10 hover:bg-white/10' : 'bg-white/10 text-white border-white/20'}`}
+                        >
+                            {voiceMode ? 'Switch to Text' : 'Switch to Voice'}
+                        </button>
 
                         <button
                             onClick={handleEndInterview}

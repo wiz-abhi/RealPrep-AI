@@ -8,7 +8,7 @@ export class GeminiService {
     private model: any;
     private modelName: string;
 
-    constructor(modelName: 'gemini-2.5-pro-preview-06-05' | 'gemini-2.5-flash' | 'gemini-2.5-flash-lite' = 'gemini-2.5-flash') {
+    constructor(modelName: string = 'gemini-2.5-flash-lite') {
         this.modelName = modelName;
         this.model = genAI.getGenerativeModel({ model: modelName });
     }
@@ -86,7 +86,7 @@ Start the interview naturally. Introduce yourself briefly, make the candidate co
     }
 
     async analyzeResume(resumeText: string) {
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = `Analyze this resume and extract key skills, strengths, and weaknesses as JSON: ${resumeText}`;
         const result = await this.retryOperation(() => model.generateContent(prompt));
         const text = result.response.text();
