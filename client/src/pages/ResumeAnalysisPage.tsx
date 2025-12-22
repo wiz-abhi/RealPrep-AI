@@ -8,7 +8,7 @@ export const ResumeAnalysisPage = () => {
     const location = useLocation();
     const navigate = useNavigate();
     const { user } = useAuth();
-    const { file, fileName, fileType, resumeId: existingResumeId, skills: existingSkills } = location.state || {};
+    const { file, fileName, fileType, saveResume = true, resumeId: existingResumeId, skills: existingSkills } = location.state || {};
 
     const [analyzing, setAnalyzing] = useState(true);
     const [progress, setProgress] = useState(0);
@@ -54,7 +54,8 @@ export const ResumeAnalysisPage = () => {
                     userId: user.id,
                     content,
                     fileType,
-                    fileName
+                    fileName,
+                    temporary: !saveResume
                 })
             });
 

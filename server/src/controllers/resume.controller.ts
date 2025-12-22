@@ -9,7 +9,7 @@ const gemini = new GeminiService();
 
 export const uploadResume = async (req: Request, res: Response) => {
     try {
-        const { content, userId, fileType, fileName } = req.body;
+        const { content, userId, fileType, fileName, temporary } = req.body;
 
         let textContent = content;
 
@@ -31,6 +31,9 @@ export const uploadResume = async (req: Request, res: Response) => {
             }
         }
 
+        // Calculate expiry - 2 hours from now for temporary resumes
+        const expiresAt = temporary ? new Date(Date.now() + 2 * 60 * 60 * 1000) : null;
+
         // Store in DB (only metadata, NOT full content)
         const resumeId = uuidv4();
         const resume = await prisma.resume.create({
@@ -39,7 +42,9 @@ export const uploadResume = async (req: Request, res: Response) => {
                 userId: userId || 'mock-user-id',
                 content: '', // Empty - we only store chunks
                 fileUrl: fileName || 'uploaded-resume',
-                skills: [] // Will be populated during interview start
+                skills: [], // Will be populated during interview start
+                temporary: temporary || false,
+                expiresAt: expiresAt
             }
         });
 
@@ -51,12 +56,45 @@ export const uploadResume = async (req: Request, res: Response) => {
             data: {
                 id: resume.id,
                 skills: ['Analyzing...'], // Placeholder for UI
-                message: 'Resume indexed successfully'
+                message: 'Resume indexed successfully',
+                temporary: temporary || false
             }
         });
 
     } catch (error) {
         console.error('Resume upload error:', error);
         res.status(500).json({ error: 'Failed to process resume' });
+    }
+};
+
+// Cleanup expired temporary resumes
+export const cleanupExpiredResumes = async () => {
+    try {
+        const expiredResumes = await prisma.resume.findMany({
+            where: {
+                temporary: true,
+                expiresAt: {
+                    lte: new Date()
+                }
+            },
+            select: { id: true }
+        });
+
+        for (const resume of expiredResumes) {
+            // Delete chunks first
+            await prisma.chunk.deleteMany({
+                where: { resumeId: resume.id }
+            });
+            // Then delete resume
+            await prisma.resume.delete({
+                where: { id: resume.id }
+            });
+        }
+
+        if (expiredResumes.length > 0) {
+            console.log(`Cleaned up ${expiredResumes.length} expired temporary resumes`);
+        }
+    } catch (error) {
+        console.error('Cleanup error:', error);
     }
 };

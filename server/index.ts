@@ -20,6 +20,7 @@ import interviewRoutes from './src/routes/interview.routes';
 import referenceRoutes from './src/routes/reference.routes';
 import authRoutes from './src/routes/auth.routes';
 import userRoutes from './src/routes/user.routes';
+import { cleanupExpiredResumes } from './src/controllers/resume.controller';
 
 // ... (existing code)
 
@@ -51,4 +52,8 @@ const PORT = process.env.PORT || 3000;
 
 httpServer.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+
+    // Run cleanup on startup and every hour
+    cleanupExpiredResumes();
+    setInterval(cleanupExpiredResumes, 60 * 60 * 1000); // Every hour
 });

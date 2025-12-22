@@ -87,6 +87,44 @@ export const DashboardPage = () => {
                         </GlassCard>
                     </div>
 
+                    {/* Features */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <GlassCard
+                            hover
+                            className="cursor-pointer text-center py-6"
+                            onClick={() => navigate('/upload')}
+                        >
+                            <div className="text-2xl mb-2">🎙️</div>
+                            <h3 className="text-sm font-medium text-white/80">Interview Practice</h3>
+                            <p className="text-[10px] text-white/30 mt-1">AI-powered mock interviews</p>
+                        </GlassCard>
+                        <GlassCard
+                            hover
+                            className="cursor-pointer text-center py-6"
+                            onClick={() => navigate('/resumes')}
+                        >
+                            <div className="text-2xl mb-2">📊</div>
+                            <h3 className="text-sm font-medium text-white/80">Resume ATS</h3>
+                            <p className="text-[10px] text-white/30 mt-1">Check ATS compatibility</p>
+                        </GlassCard>
+                        <GlassCard
+                            hover
+                            className="cursor-pointer text-center py-6 opacity-50"
+                        >
+                            <div className="text-2xl mb-2">📝</div>
+                            <h3 className="text-sm font-medium text-white/80">Resume Maker</h3>
+                            <p className="text-[10px] text-white/30 mt-1">Coming soon</p>
+                        </GlassCard>
+                        <GlassCard
+                            hover
+                            className="cursor-pointer text-center py-6 opacity-50"
+                        >
+                            <div className="text-2xl mb-2">💬</div>
+                            <h3 className="text-sm font-medium text-white/80">Discussion</h3>
+                            <p className="text-[10px] text-white/30 mt-1">Coming soon</p>
+                        </GlassCard>
+                    </div>
+
                     {/* Recent Sessions */}
                     <GlassCard className="p-6">
                         <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-6">Recent Sessions</h2>

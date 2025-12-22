@@ -8,6 +8,7 @@ export const ResumeUploadPage = () => {
     const navigate = useNavigate();
     const { user } = useAuth();
     const [dragActive, setDragActive] = useState(false);
+    const [saveResume, setSaveResume] = useState(true);
 
     const handleDrag = (e: React.DragEvent) => {
         e.preventDefault();
@@ -41,7 +42,8 @@ export const ResumeUploadPage = () => {
             state: {
                 file: file,
                 fileName: file.name,
-                fileType: file.type
+                fileType: file.type,
+                saveResume: saveResume
             }
         });
     };
@@ -82,6 +84,30 @@ export const ResumeUploadPage = () => {
                             <p className="text-sm text-white/70">Click or drag file here</p>
                             <p className="text-xs text-white/30 mt-1">PDF, DOCX, TXT, or MD</p>
                         </div>
+                    </div>
+
+                    {/* Save Resume Toggle */}
+                    <div className="mt-6 flex items-center justify-between p-4 rounded border border-white/5 bg-white/5">
+                        <div className="text-left">
+                            <p className="text-sm text-white/70">Save resume to profile</p>
+                            <p className="text-[10px] text-white/30 mt-0.5">
+                                {saveResume ? 'Resume will be saved for future use' : 'Resume will be deleted after session'}
+                            </p>
+                        </div>
+                        <button
+                            onClick={() => setSaveResume(!saveResume)}
+                            className={`
+                                relative w-12 h-6 rounded-full transition-all duration-200
+                                ${saveResume ? 'bg-white/20' : 'bg-white/5'}
+                            `}
+                        >
+                            <div
+                                className={`
+                                    absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-200
+                                    ${saveResume ? 'left-7' : 'left-1'}
+                                `}
+                            />
+                        </button>
                     </div>
                 </GlassCard>
             </main>

@@ -28,6 +28,8 @@ model Resume {
   fileUrl   String
   skills    String[] // JSON array of skills
   chunks    ResumeChunk[]
+  temporary Boolean  @default(false)
+  expiresAt DateTime?
   createdAt DateTime @default(now())
 }
 
