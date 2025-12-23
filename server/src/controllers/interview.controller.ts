@@ -57,6 +57,13 @@ export const startSession = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Resume not found' });
         }
 
+        // Get user's name for personalized greeting
+        const user = await retryDbOperation(() => prisma.user.findUnique({
+            where: { id: userId },
+            select: { name: true }
+        }));
+        const userName = user?.name || 'there';
+
         // Retrieve relevant context from RAG
         const query = instructionPrompt || "Tell me about your skills and experience";
         const ragContext = await RAGService.retrieveContext(resumeId, query, 5);
@@ -94,6 +101,7 @@ Return ONLY a JSON array of skills, like: ["JavaScript", "React", "Node.js"]`;
 
         // Generate AI's opening greeting (AI speaks first!)
         const candidateContext = `
+Candidate Name: ${userName}
 Skills: ${skills.join(', ')}
 Resume Summary: ${ragContext.substring(0, 500)}...
 Interview Type: ${interviewType}

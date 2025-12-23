@@ -75,11 +75,19 @@ export class GeminiService {
             systemInstruction: systemInstruction
         });
 
-        const prompt = `Based on this candidate context, generate your opening greeting and first interview question:
+        const prompt = `Based on this candidate context, generate your opening greeting:
 
 ${context}
 
-Start the interview naturally. Introduce yourself briefly, make the candidate comfortable, and ask your first question.`;
+IMPORTANT INSTRUCTIONS:
+1. Greet the candidate by their name (from context above)
+2. Introduce yourself as the interviewer (use your persona name from system instructions)
+3. Ask the candidate to introduce themselves, their areas of expertise, and anything they want you to know about them
+4. Keep it warm, professional, and conversational
+5. Do NOT use any markdown formatting - this will be spoken aloud
+
+Example structure (adapt to your persona):
+"Hi [Name]! I'm [Your Name], and I'll be your interviewer today. Before we dive in, I'd love to hear a bit about you. Could you introduce yourself and tell me about your areas of expertise and anything you think would be helpful for me to know?"`;
 
         const result = await this.retryOperation(() => model.generateContent(prompt));
         return result.response.text();

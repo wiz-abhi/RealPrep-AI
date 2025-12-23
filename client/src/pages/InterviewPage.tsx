@@ -27,6 +27,7 @@ export const InterviewPage = () => {
     const {
         transcript,
         isRecording,
+        isProcessing,
         error: audioError,
         startRecording,
         stopRecording,
@@ -61,7 +62,8 @@ export const InterviewPage = () => {
                 }, 500);
             }
         }
-    }, [agentArgs, hasPlayedInitial, playResponse, voiceMode]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [agentArgs, hasPlayedInitial, voiceMode]);
 
     useEffect(() => {
         connectVision();
@@ -81,12 +83,12 @@ export const InterviewPage = () => {
         return () => clearInterval(interval);
     }, [sendFrame]);
 
-    // Handle voice transcript when recording stops
+    // Handle voice transcript when transcription completes
     useEffect(() => {
-        if (!isRecording && transcript && voiceMode) {
+        if (!isRecording && !isProcessing && transcript && voiceMode) {
             handleSendMessage(transcript);
         }
-    }, [isRecording]);
+    }, [isRecording, isProcessing, transcript]);
 
     const handleSendMessage = useCallback(async (text: string) => {
         if (!text.trim() || isLoading) return;
