@@ -43,9 +43,9 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.__clientidsecretname__ }}
-          tenant-id: ${{ secrets.__tenantidsecretname__ }}
-          subscription-id: ${{ secrets.__subscriptionidsecretname__ }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_9923F64493E246338E7A7989B2C1CBA8 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_6630AD0E2236446F9BD4AE41D42FCAF0 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_1BF8805C05254320A1A196FF25BEB1DE }}
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
@@ -53,3 +53,4 @@ jobs:
           app-name: 'realprep'
           slot-name: 'Production'
           package: .
+
