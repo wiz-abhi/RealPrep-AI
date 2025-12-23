@@ -82,7 +82,7 @@ export const cleanupExpiredResumes = async () => {
 
         for (const resume of expiredResumes) {
             // Delete chunks first
-            await prisma.chunk.deleteMany({
+            await prisma.resumeChunk.deleteMany({
                 where: { resumeId: resume.id }
             });
             // Then delete resume
