@@ -291,6 +291,37 @@ Provide your response as JSON:
     }
 };
 
+// End session without generating AI report (to save Gemini tokens)
+export const endSessionWithoutReport = async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.body;
+
+        // Just mark session as completed without AI evaluation
+        await prisma.session.update({
+            where: { id: sessionId },
+            data: {
+                status: 'completed',
+                score: 0,
+                feedback: {
+                    summary: 'Interview completed without AI evaluation',
+                    strengths: [],
+                    improvements: [],
+                    noReport: true
+                }
+            }
+        });
+
+        res.json({
+            success: true,
+            data: { message: 'Session closed without report' }
+        });
+
+    } catch (error) {
+        console.error('End session error:', error);
+        res.status(500).json({ error: 'Failed to end session' });
+    }
+};
+
 export const getUserSessions = async (req: Request, res: Response) => {
     try {
         const userId = req.userId;

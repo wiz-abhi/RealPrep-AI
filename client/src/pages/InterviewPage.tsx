@@ -19,6 +19,7 @@ export const InterviewPage = () => {
     const [hasPlayedInitial, setHasPlayedInitial] = useState(false);
     const [textInput, setTextInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [showEndModal, setShowEndModal] = useState(false);
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -132,7 +133,13 @@ export const InterviewPage = () => {
         setTextInput(e.target.value);
     }, []);
 
-    const handleEndInterview = async () => {
+    // Show confirmation modal when clicking End Interview
+    const handleEndInterviewClick = () => {
+        setShowEndModal(true);
+    };
+
+    // Save transcript and generate report
+    const handleSaveReport = async () => {
         try {
             const token = localStorage.getItem('token');
             await fetch('http://localhost:3000/api/interview/end', {
@@ -143,6 +150,23 @@ export const InterviewPage = () => {
             navigate(`/report/${sessionId}`);
         } catch (error) {
             console.error('End interview error:', error);
+        }
+    };
+
+    // Close immediately without saving
+    const handleCloseImmediately = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            // End session without generating AI report (saves Gemini tokens)
+            await fetch('http://localhost:3000/api/interview/end-quick', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ sessionId })
+            });
+            navigate('/dashboard');
+        } catch (error) {
+            console.error('Close interview error:', error);
+            navigate('/dashboard');
         }
     };
 
@@ -222,10 +246,42 @@ export const InterviewPage = () => {
                         {voiceMode ? '🎤 Voice' : '⌨️ Text'}
                     </span>
                 </div>
-                <button onClick={handleEndInterview} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5">
+                <button onClick={handleEndInterviewClick} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5">
                     End Interview
                 </button>
             </header>
+
+            {/* End Interview Confirmation Modal */}
+            {showEndModal && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
+                    <div className="bg-zinc-900 border border-white/10 rounded-lg p-6 max-w-md w-full mx-4">
+                        <h3 className="text-lg font-medium text-white mb-2">End Interview?</h3>
+                        <p className="text-sm text-white/60 mb-6">
+                            Would you like to save your interview transcript and generate a performance report, or close immediately without saving?
+                        </p>
+                        <div className="flex gap-3">
+                            <button
+                                onClick={handleCloseImmediately}
+                                className="flex-1 px-4 py-2 text-sm text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5 transition-colors"
+                            >
+                                Close Immediately
+                            </button>
+                            <button
+                                onClick={handleSaveReport}
+                                className="flex-1 px-4 py-2 text-sm bg-white text-black rounded hover:bg-white/90 transition-colors font-medium"
+                            >
+                                Save Report
+                            </button>
+                        </div>
+                        <button
+                            onClick={() => setShowEndModal(false)}
+                            className="mt-4 w-full text-xs text-white/30 hover:text-white/50"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {audioError && (
                 <div className="px-6 py-2 bg-white/5 text-xs text-white/50 border-b border-white/5">⚠ {audioError}</div>
@@ -446,7 +502,7 @@ export const InterviewPage = () => {
                         </button>
 
                         <button
-                            onClick={handleEndInterview}
+                            onClick={handleEndInterviewClick}
                             className="px-4 py-2 text-xs text-white/60 hover:text-white border border-white/10 rounded-full hover:bg-white/10 transition-all"
                         >
                             End Interview
