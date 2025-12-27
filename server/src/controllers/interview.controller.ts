@@ -167,6 +167,22 @@ export const chat = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Session not found' });
         }
 
+        // Store emotions in session feedback for later analysis
+        if (emotions && emotions.length > 0) {
+            const currentFeedback = (session.feedback as any) || {};
+            const emotionHistory = currentFeedback.emotionHistory || [];
+            emotionHistory.push({
+                timestamp: new Date().toISOString(),
+                emotions: emotions.slice(0, 5) // Store top 5 emotions
+            });
+            await prisma.session.update({
+                where: { id: sessionId },
+                data: {
+                    feedback: { ...currentFeedback, emotionHistory }
+                }
+            });
+        }
+
         // Store user message
         await retryDbOperation(() => prisma.transcript.create({
             data: {
@@ -235,21 +251,89 @@ export const endSession = async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.body;
 
+        // Get session to retrieve emotion history
+        const session = await prisma.session.findUnique({
+            where: { id: sessionId }
+        });
+
         // Get all transcripts
         const transcripts = await prisma.transcript.findMany({
             where: { sessionId },
             orderBy: { timestamp: 'asc' }
         });
 
+        // Analyze emotion history
+        const sessionFeedback = (session?.feedback as any) || {};
+        const emotionHistory = sessionFeedback.emotionHistory || [];
+
+        // Calculate emotional analysis
+        let emotionalAnalysis = {
+            averageConfidence: 0,
+            averageNervousness: 0,
+            stressPoints: 0,
+            emotionTrend: 'stable' as string,
+            dominantEmotions: [] as string[]
+        };
+
+        if (emotionHistory.length > 0) {
+            const allEmotions: Record<string, number[]> = {};
+            emotionHistory.forEach((entry: any) => {
+                entry.emotions?.forEach((e: any) => {
+                    if (!allEmotions[e.name]) allEmotions[e.name] = [];
+                    allEmotions[e.name].push(e.score);
+                });
+            });
+
+            // Calculate averages
+            const avgScores: Record<string, number> = {};
+            Object.entries(allEmotions).forEach(([name, scores]) => {
+                avgScores[name] = scores.reduce((a, b) => a + b, 0) / scores.length;
+            });
+
+            emotionalAnalysis.averageConfidence = Math.round((avgScores['Joy'] || 0) * 100);
+            emotionalAnalysis.averageNervousness = Math.round(((avgScores['Fear'] || 0) + (avgScores['Anxiety'] || 0)) * 50);
+            emotionalAnalysis.stressPoints = emotionHistory.filter((e: any) =>
+                e.emotions?.some((em: any) => (em.name === 'Fear' || em.name === 'Anxiety') && em.score > 0.3)
+            ).length;
+
+            // Get dominant emotions
+            const sortedEmotions = Object.entries(avgScores)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 3)
+                .map(([name, score]) => `${name} (${Math.round(score * 100)}%)`);
+            emotionalAnalysis.dominantEmotions = sortedEmotions;
+
+            // Determine trend
+            if (emotionHistory.length >= 3) {
+                const firstHalf = emotionHistory.slice(0, Math.floor(emotionHistory.length / 2));
+                const secondHalf = emotionHistory.slice(Math.floor(emotionHistory.length / 2));
+                const getAvgStress = (entries: any[]) => {
+                    let total = 0, count = 0;
+                    entries.forEach(e => e.emotions?.forEach((em: any) => {
+                        if (em.name === 'Fear' || em.name === 'Anxiety') { total += em.score; count++; }
+                    }));
+                    return count > 0 ? total / count : 0;
+                };
+                const firstStress = getAvgStress(firstHalf);
+                const secondStress = getAvgStress(secondHalf);
+                if (secondStress < firstStress - 0.1) emotionalAnalysis.emotionTrend = 'improving';
+                else if (secondStress > firstStress + 0.1) emotionalAnalysis.emotionTrend = 'declining';
+            }
+        }
+
         // Generate evaluation
         const conversationText = transcripts.map(t =>
             `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
         ).join('\n\n');
 
+        const emotionSummary = emotionHistory.length > 0
+            ? `\n\nEMOTIONAL DATA:\n- Dominant emotions: ${emotionalAnalysis.dominantEmotions.join(', ')}\n- Stress points detected: ${emotionalAnalysis.stressPoints}\n- Overall trend: ${emotionalAnalysis.emotionTrend}`
+            : '';
+
         const evaluationPrompt = `Evaluate this interview transcript and provide a score from 0-100 and detailed feedback.
 
 TRANSCRIPT:
-${conversationText}
+${conversationText}${emotionSummary}
 
 Provide your response as JSON:
 {
@@ -269,6 +353,9 @@ Provide your response as JSON:
         } catch {
             evaluation = { score: 70, summary: 'Interview completed', strengths: [], improvements: [] };
         }
+
+        // Add emotional analysis to evaluation
+        evaluation.emotionalAnalysis = emotionalAnalysis;
 
         // Update session
         await prisma.session.update({
@@ -319,6 +406,112 @@ export const endSessionWithoutReport = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('End session error:', error);
         res.status(500).json({ error: 'Failed to end session' });
+    }
+};
+
+// Generate detailed improvement plan based on interview performance and emotions
+export const generateImprovementPlan = async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.body;
+
+        // Get session with feedback and transcript
+        const session = await prisma.session.findUnique({
+            where: { id: sessionId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        const transcripts = await prisma.transcript.findMany({
+            where: { sessionId },
+            orderBy: { timestamp: 'asc' }
+        });
+
+        const feedback = session.feedback as any;
+        const emotionalAnalysis = feedback?.emotionalAnalysis || {};
+        const emotionHistory = feedback?.emotionHistory || [];
+
+        // Build context for improvement plan
+        const conversationText = transcripts.map(t =>
+            `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
+        ).join('\n\n');
+
+        const emotionalContext = emotionHistory.length > 0 ? `
+EMOTIONAL ANALYSIS:
+- Dominant Emotions: ${emotionalAnalysis.dominantEmotions?.join(', ') || 'Not available'}
+- Average Confidence: ${emotionalAnalysis.averageConfidence || 0}%
+- Nervousness Level: ${emotionalAnalysis.averageNervousness || 0}%
+- Stress Points Detected: ${emotionalAnalysis.stressPoints || 0}
+- Emotional Trend: ${emotionalAnalysis.emotionTrend || 'stable'}
+` : '';
+
+        const performanceContext = `
+PERFORMANCE SCORES:
+- Overall Score: ${session.score || 0}/100
+- Technical Accuracy: ${feedback?.technicalAccuracy || 'N/A'}
+- Communication Skills: ${feedback?.communicationSkills || 'N/A'}
+- Problem Solving: ${feedback?.problemSolving || 'N/A'}
+
+STRENGTHS: ${feedback?.strengths?.join(', ') || 'None identified'}
+AREAS FOR IMPROVEMENT: ${feedback?.improvements?.join(', ') || 'None identified'}
+`;
+
+        const improvementPrompt = `Based on this interview data, create a comprehensive and personalized improvement plan.
+
+INTERVIEW TRANSCRIPT:
+${conversationText}
+
+${performanceContext}
+${emotionalContext}
+
+Create a detailed improvement plan in JSON format:
+{
+    "technicalPlan": {
+        "gaps": ["<specific topic/skill gap 1>", "<gap 2>"],
+        "resources": ["<recommended resource 1>", "<resource 2>"],
+        "practiceExercises": ["<exercise 1>", "<exercise 2>"],
+        "timeline": "<suggested learning timeline>"
+    },
+    "communicationPlan": {
+        "currentLevel": "<brief assessment>",
+        "improvements": ["<specific improvement 1>", "<improvement 2>"],
+        "techniques": ["<technique to practice 1>", "<technique 2>"]
+    },
+    "emotionalReadiness": {
+        "stressManagement": ["<tip 1>", "<tip 2>"],
+        "confidenceBuilding": ["<strategy 1>", "<strategy 2>"],
+        "interviewAnxiety": ["<coping mechanism 1>", "<mechanism 2>"]
+    },
+    "actionItems": [
+        {"task": "<specific task>", "priority": "high|medium|low", "deadline": "<suggested timeframe>"},
+        {"task": "<task 2>", "priority": "high|medium|low", "deadline": "<timeframe>"}
+    ],
+    "overallAdvice": "<personalized motivational advice based on their performance>"
+}`;
+
+        const planText = await reportGemini.generateText(improvementPrompt);
+        let improvementPlan;
+        try {
+            improvementPlan = JSON.parse(planText);
+        } catch {
+            improvementPlan = {
+                technicalPlan: { gaps: ['Unable to generate detailed analysis'], resources: [], practiceExercises: [], timeline: '2-4 weeks' },
+                communicationPlan: { currentLevel: 'Needs review', improvements: [], techniques: [] },
+                emotionalReadiness: { stressManagement: [], confidenceBuilding: [], interviewAnxiety: [] },
+                actionItems: [],
+                overallAdvice: 'Keep practicing and stay confident!'
+            };
+        }
+
+        res.json({
+            success: true,
+            data: improvementPlan
+        });
+
+    } catch (error) {
+        console.error('Generate improvement plan error:', error);
+        res.status(500).json({ error: 'Failed to generate improvement plan' });
     }
 };
 

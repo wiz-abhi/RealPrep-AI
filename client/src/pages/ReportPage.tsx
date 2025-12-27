@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
+import { Sparkles, Brain, Heart, Target, ChevronDown, ChevronUp } from 'lucide-react';
 
 export const ReportPage = () => {
     const { sessionId } = useParams();
@@ -9,6 +10,9 @@ export const ReportPage = () => {
     const [report, setReport] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [improvementPlan, setImprovementPlan] = useState<any>(null);
+    const [loadingPlan, setLoadingPlan] = useState(false);
+    const [showPlan, setShowPlan] = useState(false);
 
     useEffect(() => {
         fetchReport();
@@ -31,6 +35,30 @@ export const ReportPage = () => {
             setError('Failed to load report');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const generateImprovementPlan = async () => {
+        setLoadingPlan(true);
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch('http://localhost:3000/api/interview/improvement-plan', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ sessionId })
+            });
+            const data = await res.json();
+            if (data.success) {
+                setImprovementPlan(data.data);
+                setShowPlan(true);
+            }
+        } catch (err) {
+            console.error('Failed to generate improvement plan:', err);
+        } finally {
+            setLoadingPlan(false);
         }
     };
 
@@ -63,6 +91,8 @@ export const ReportPage = () => {
         );
     }
 
+    const emotionalAnalysis = report.feedback?.emotionalAnalysis;
+
     return (
         <div className="flex min-h-screen bg-black text-white">
             <Sidebar />
@@ -91,6 +121,48 @@ export const ReportPage = () => {
                         </p>
                     </GlassCard>
 
+                    {/* Emotional Analysis */}
+                    {emotionalAnalysis && (emotionalAnalysis.dominantEmotions?.length > 0 || emotionalAnalysis.stressPoints > 0) && (
+                        <GlassCard className="p-5">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Heart size={16} className="text-pink-400" />
+                                <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider">Emotional Analysis</h3>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <div className="text-center p-3 bg-white/5 rounded-lg">
+                                    <div className="text-2xl font-light text-green-400">{emotionalAnalysis.averageConfidence || 0}%</div>
+                                    <div className="text-[10px] text-white/40 uppercase mt-1">Confidence</div>
+                                </div>
+                                <div className="text-center p-3 bg-white/5 rounded-lg">
+                                    <div className="text-2xl font-light text-yellow-400">{emotionalAnalysis.averageNervousness || 0}%</div>
+                                    <div className="text-[10px] text-white/40 uppercase mt-1">Nervousness</div>
+                                </div>
+                                <div className="text-center p-3 bg-white/5 rounded-lg">
+                                    <div className="text-2xl font-light text-red-400">{emotionalAnalysis.stressPoints || 0}</div>
+                                    <div className="text-[10px] text-white/40 uppercase mt-1">Stress Points</div>
+                                </div>
+                                <div className="text-center p-3 bg-white/5 rounded-lg">
+                                    <div className={`text-2xl font-light ${emotionalAnalysis.emotionTrend === 'improving' ? 'text-green-400' :
+                                            emotionalAnalysis.emotionTrend === 'declining' ? 'text-red-400' : 'text-white/60'
+                                        }`}>
+                                        {emotionalAnalysis.emotionTrend === 'improving' ? '↑' :
+                                            emotionalAnalysis.emotionTrend === 'declining' ? '↓' : '→'}
+                                    </div>
+                                    <div className="text-[10px] text-white/40 uppercase mt-1">Trend</div>
+                                </div>
+                            </div>
+                            {emotionalAnalysis.dominantEmotions?.length > 0 && (
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                    {emotionalAnalysis.dominantEmotions.map((emotion: string, i: number) => (
+                                        <span key={i} className="px-2 py-1 bg-white/5 rounded text-xs text-white/60">
+                                            {emotion}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </GlassCard>
+                    )}
+
                     {/* Feedback */}
                     {report.feedback && typeof report.feedback === 'object' && (
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -100,7 +172,7 @@ export const ReportPage = () => {
                                     <ul className="space-y-2">
                                         {report.feedback.strengths.map((s: string, i: number) => (
                                             <li key={i} className="text-sm text-white/70 flex items-start gap-2">
-                                                <span className="text-white/40">•</span>
+                                                <span className="text-green-400">✓</span>
                                                 {s}
                                             </li>
                                         ))}
@@ -110,11 +182,11 @@ export const ReportPage = () => {
 
                             {report.feedback.improvements?.length > 0 && (
                                 <GlassCard className="p-5">
-                                    <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">Improvements</h3>
+                                    <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">Areas to Improve</h3>
                                     <ul className="space-y-2">
                                         {report.feedback.improvements.map((s: string, i: number) => (
                                             <li key={i} className="text-sm text-white/70 flex items-start gap-2">
-                                                <span className="text-white/40">•</span>
+                                                <span className="text-yellow-400">→</span>
                                                 {s}
                                             </li>
                                         ))}
@@ -133,6 +205,160 @@ export const ReportPage = () => {
                             </p>
                         </GlassCard>
                     )}
+
+                    {/* Improvement Plan Section */}
+                    <GlassCard className="p-5">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                                <Sparkles size={16} className="text-purple-400" />
+                                <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider">Personalized Improvement Plan</h3>
+                            </div>
+                            {!improvementPlan && (
+                                <button
+                                    onClick={generateImprovementPlan}
+                                    disabled={loadingPlan}
+                                    className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white text-sm rounded-lg hover:opacity-90 transition-all disabled:opacity-50"
+                                >
+                                    {loadingPlan ? 'Generating...' : 'Generate Plan'}
+                                </button>
+                            )}
+                            {improvementPlan && (
+                                <button
+                                    onClick={() => setShowPlan(!showPlan)}
+                                    className="text-white/40 hover:text-white/60"
+                                >
+                                    {showPlan ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                </button>
+                            )}
+                        </div>
+
+                        {showPlan && improvementPlan && (
+                            <div className="mt-6 space-y-6">
+                                {/* Technical Plan */}
+                                <div>
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <Brain size={14} className="text-blue-400" />
+                                        <h4 className="text-xs font-medium text-white/50 uppercase">Technical Development</h4>
+                                    </div>
+                                    <div className="space-y-3 pl-5">
+                                        {improvementPlan.technicalPlan?.gaps?.length > 0 && (
+                                            <div>
+                                                <p className="text-[10px] text-white/30 mb-1">Knowledge Gaps</p>
+                                                <ul className="space-y-1">
+                                                    {improvementPlan.technicalPlan.gaps.map((g: string, i: number) => (
+                                                        <li key={i} className="text-xs text-white/60">• {g}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {improvementPlan.technicalPlan?.resources?.length > 0 && (
+                                            <div>
+                                                <p className="text-[10px] text-white/30 mb-1">Recommended Resources</p>
+                                                <ul className="space-y-1">
+                                                    {improvementPlan.technicalPlan.resources.map((r: string, i: number) => (
+                                                        <li key={i} className="text-xs text-white/60">• {r}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+                                        {improvementPlan.technicalPlan?.timeline && (
+                                            <p className="text-xs text-white/40">Timeline: {improvementPlan.technicalPlan.timeline}</p>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Communication Plan */}
+                                {improvementPlan.communicationPlan && (
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <Target size={14} className="text-green-400" />
+                                            <h4 className="text-xs font-medium text-white/50 uppercase">Communication Skills</h4>
+                                        </div>
+                                        <div className="space-y-3 pl-5">
+                                            <p className="text-xs text-white/60">{improvementPlan.communicationPlan.currentLevel}</p>
+                                            {improvementPlan.communicationPlan.techniques?.length > 0 && (
+                                                <ul className="space-y-1">
+                                                    {improvementPlan.communicationPlan.techniques.map((t: string, i: number) => (
+                                                        <li key={i} className="text-xs text-white/60">• {t}</li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Emotional Readiness */}
+                                {improvementPlan.emotionalReadiness && (
+                                    <div>
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <Heart size={14} className="text-pink-400" />
+                                            <h4 className="text-xs font-medium text-white/50 uppercase">Emotional Readiness</h4>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pl-5">
+                                            {improvementPlan.emotionalReadiness.stressManagement?.length > 0 && (
+                                                <div>
+                                                    <p className="text-[10px] text-white/30 mb-1">Stress Management</p>
+                                                    <ul className="space-y-1">
+                                                        {improvementPlan.emotionalReadiness.stressManagement.map((s: string, i: number) => (
+                                                            <li key={i} className="text-xs text-white/60">• {s}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            {improvementPlan.emotionalReadiness.confidenceBuilding?.length > 0 && (
+                                                <div>
+                                                    <p className="text-[10px] text-white/30 mb-1">Confidence Building</p>
+                                                    <ul className="space-y-1">
+                                                        {improvementPlan.emotionalReadiness.confidenceBuilding.map((c: string, i: number) => (
+                                                            <li key={i} className="text-xs text-white/60">• {c}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            {improvementPlan.emotionalReadiness.interviewAnxiety?.length > 0 && (
+                                                <div>
+                                                    <p className="text-[10px] text-white/30 mb-1">Interview Anxiety</p>
+                                                    <ul className="space-y-1">
+                                                        {improvementPlan.emotionalReadiness.interviewAnxiety.map((a: string, i: number) => (
+                                                            <li key={i} className="text-xs text-white/60">• {a}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Action Items */}
+                                {improvementPlan.actionItems?.length > 0 && (
+                                    <div>
+                                        <h4 className="text-xs font-medium text-white/50 uppercase mb-3">Action Items</h4>
+                                        <div className="space-y-2">
+                                            {improvementPlan.actionItems.map((item: any, i: number) => (
+                                                <div key={i} className="flex items-center gap-3 p-2 bg-white/5 rounded">
+                                                    <span className={`px-2 py-0.5 text-[10px] rounded ${item.priority === 'high' ? 'bg-red-500/20 text-red-400' :
+                                                            item.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                                'bg-green-500/20 text-green-400'
+                                                        }`}>
+                                                        {item.priority}
+                                                    </span>
+                                                    <span className="text-xs text-white/70 flex-1">{item.task}</span>
+                                                    <span className="text-[10px] text-white/30">{item.deadline}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Overall Advice */}
+                                {improvementPlan.overallAdvice && (
+                                    <div className="p-4 bg-gradient-to-r from-purple-500/10 to-pink-500/10 rounded-lg border border-purple-500/20">
+                                        <p className="text-sm text-white/70 italic">{improvementPlan.overallAdvice}</p>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </GlassCard>
 
                     {/* Transcript */}
                     {report.transcript?.length > 0 && (

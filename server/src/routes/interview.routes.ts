@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { startSession, endSession, endSessionWithoutReport, getAccessToken, chat, getUserSessions, getReport, clearHistory } from '../controllers/interview.controller';
+import { startSession, endSession, endSessionWithoutReport, generateImprovementPlan, getAccessToken, chat, getUserSessions, getReport, clearHistory } from '../controllers/interview.controller';
 import { authenticateToken } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -12,5 +12,6 @@ router.get('/report/:sessionId', getReport);
 router.post('/chat', chat);
 router.post('/end', endSession);
 router.post('/end-quick', endSessionWithoutReport);
+router.post('/improvement-plan', generateImprovementPlan);
 
 export default router;
