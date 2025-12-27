@@ -48,10 +48,16 @@ export class GeminiService {
     async generateInterviewResponse(
         systemInstruction: string,
         history: { role: string; parts: string }[],
-        input: string
+        input: string,
+        customApiKey?: string  // Optional user-provided API key
     ) {
+        // Use custom API key if provided, otherwise use default
+        const ai = customApiKey
+            ? new GoogleGenerativeAI(customApiKey)
+            : genAI;
+
         // Create model with system instruction
-        const model = genAI.getGenerativeModel({
+        const model = ai.getGenerativeModel({
             model: this.modelName,
             systemInstruction: systemInstruction
         });

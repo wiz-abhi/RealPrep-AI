@@ -1,5 +1,11 @@
 import { useRef, useState, useCallback } from 'react';
 
+// Get API key - user's localStorage key takes priority
+const getHumeApiKey = () => {
+    const userKey = localStorage.getItem('user_hume_api_key');
+    return userKey || import.meta.env.VITE_HUME_API_KEY;
+};
+
 // Using raw WebSocket for Hume Vision as it offers fine-grained control for frame streaming
 // and might be lighter than the full Voice SDK just for vision.
 export const useHumeVision = () => {
@@ -9,12 +15,8 @@ export const useHumeVision = () => {
 
     const connect = useCallback(async () => {
         try {
-            // Ideally fetch token from YOUR backend to avoid exposing keys
-            // const accessToken = await fetchAccessToken({ ... }); 
-            // but for prototype we might use a direct API Key if secure proxy isn't set up yet
-
-            // Note: For production, always route through your backend!
-            const apiKey = import.meta.env.VITE_HUME_API_KEY;
+            // Get API key (user's custom key or env key)
+            const apiKey = getHumeApiKey();
 
             const socketUrl = `wss://api.hume.ai/v0/stream/models?api_key=${apiKey}`;
             socketRef.current = new WebSocket(socketUrl);

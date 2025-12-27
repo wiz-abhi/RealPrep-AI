@@ -8,75 +8,78 @@ RealPrep AI is an advanced, AI-powered interview preparation platform designed t
 
 ## ✨ Features
 
-- **🤖 AI Interviewer**: Conducts realistic interviews with varying personas (Technical, Behavioral, System Design).
-- **🗣️ Voice & Text Modes**: Choose between speaking naturally with the AI or typing your responses.
-- **👀 Emotion Detection**: Real-time facial expression analysis using Hume AI to adapt the interview flow based on your confidence and stress levels.
-- **💻 Coding Challenges**: Integrated code editor for technical interviews, allowing you to solve problems individually.
-- **📄 Resume Analysis**: Upload your resume for personalized questions and skill-based technical deep dives.
-- **📊 Comprehensive Reports**: Receive detailed feedback, scoring, and improvement suggestions after each session.
-- **🧠 Adaptive Memory**: The AI remembers context from your resume and previous responses throughout the interview.
+### Core Interview Experience
+- **🤖 AI Interviewer**: Conducts realistic interviews with varying personas (Technical, Behavioral, System Design)
+- **🗣️ Voice & Text Modes**: Choose between speaking naturally with the AI or typing your responses
+- **💻 Coding Challenges**: Integrated code editor for technical interviews
+- **📄 Resume Analysis**: Upload your resume for personalized questions and skill-based deep dives
+
+### Emotional Intelligence (USP)
+- **👀 Real-time Emotion Detection**: Facial expression analysis using Hume AI throughout the interview
+- **💪 Confidence Tracking**: Monitors your confidence levels during responses
+- **😰 Stress Detection**: Identifies high-stress moments and tracks nervousness
+- **📈 Emotion Trends**: Analyzes if your emotional state improved or declined
+
+### Reports & Improvement
+- **📊 Comprehensive Reports**: Detailed feedback with scoring after each session
+- **❤️ Emotional Analysis**: See your confidence %, nervousness %, stress points, and dominant emotions
+- **🎯 Personalized Improvement Plan**: AI-generated coaching covering:
+  - Technical skill gaps with learning resources
+  - Communication skill improvements
+  - Stress management & confidence building tips
+  - Prioritized action items with deadlines
 
 ## 🛠️ Tech Stack
 
 ### Frontend
-- **React** (Vite)
-- **TypeScript**
+- **React** (Vite) + **TypeScript**
 - **TailwindCSS** (Styling)
 - **Framer Motion** (Animations)
 - **Lucide React** (Icons)
 
 ### Backend
 - **Node.js** & **Express**
-- **Prisma** (ORM)
-- **PostgreSQL** (Database)
-- **Pinecone / PGVector** (Vector Search for RAG)
+- **Prisma** (ORM) + **PostgreSQL**
+- **PGVector** (Vector Search for RAG)
 
 ### AI Services
-- **Google Gemini** (LLM for Chat, Logic, & Reports) - *Using `gemini-3-flash`*
-- **ElevenLabs** (Text-to-Speech & Speech-to-Text)
-- **Hume AI** (Emotion/Vision Analysis)
+- **Google Gemini** (`gemini-1.5-flash`) - Chat, Reports, Improvement Plans
+- **ElevenLabs** - Speech-to-Text (Scribe v1) & Text-to-Speech (Streaming)
+- **Hume AI** - Real-time Emotion/Vision Analysis
 
 ## 📋 Prerequisites
 
-Before you begin, ensure you have the following installed:
 - **Node.js** (v18 or higher)
 - **PostgreSQL** database (local or cloud like Neon/Supabase)
 - **npm** or **yarn**
 
 ## 🚀 Installation
 
-1.  **Clone the repository**
-    ```bash
-    git clone https://github.com/yourusername/realprep-ai.git
-    cd realprep-ai
-    ```
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/yourusername/realprep-ai.git
+   cd realprep-ai
+   ```
 
-2.  **Install Dependencies**
-    
-    *Client:*
-    ```bash
-    cd client
-    npm install
-    ```
+2. **Install Dependencies**
+   ```bash
+   # Client
+   cd client && npm install
+   
+   # Server
+   cd ../server && npm install
+   ```
 
-    *Server:*
-    ```bash
-    cd ../server
-    npm install
-    ```
-
-3.  **Database Setup**
-    Ensure your PostgreSQL database is running and the `DATABASE_URL` is set in `server/.env`.
-    
-    ```bash
-    cd server
-    npx prisma generate
-    npx prisma db push
-    ```
+3. **Database Setup**
+   ```bash
+   cd server
+   npx prisma generate
+   npx prisma db push
+   ```
 
 ## ⚙️ Configuration
 
-Create `.env` files in both `client` and `server` directories. Refer to [API_SETUP.md](./API_SETUP.md) for detailed instructions on obtaining API keys.
+Create `.env` files in both `client` and `server` directories. See [API_SETUP.md](./API_SETUP.md) for details.
 
 **Server (`server/.env`):**
 ```env
@@ -96,21 +99,13 @@ VITE_HUME_API_KEY="..."
 
 ## 🏃‍♂️ Running the Application
 
-You need to run both the client and server concurrently.
+```bash
+# Terminal 1 - Server (http://localhost:3000)
+cd server && npm run dev
 
-1.  **Start the Server**
-    ```bash
-    cd server
-    npm run dev
-    ```
-    *Server runs on http://localhost:3000*
-
-2.  **Start the Client**
-    ```bash
-    cd client
-    npm run dev
-    ```
-    *Client runs on http://localhost:5173*
+# Terminal 2 - Client (http://localhost:5173)
+cd client && npm run dev
+```
 
 ## 📂 Project Structure
 
@@ -118,20 +113,27 @@ You need to run both the client and server concurrently.
 realprep-ai/
 ├── client/                 # React Frontend
 │   ├── src/
-│   │   ├── components/     # Reusable UI components
-│   │   ├── pages/          # Application pages (Interview, Dashboard, etc.)
-│   │   ├── hooks/          # Custom hooks (useElevenLabs, useHumeVision)
-│   │   └── context/        # Global state (AuthContext)
-│   └── ...
+│   │   ├── components/     # UI components (GlassCard, CodeEditor)
+│   │   ├── pages/          # Interview, Dashboard, Report pages
+│   │   ├── hooks/          # useElevenLabs, useHumeVision
+│   │   └── context/        # AuthContext
 ├── server/                 # Node.js Backend
 │   ├── src/
-│   │   ├── controllers/    # Route logic (Interview, Resume, Auth)
-│   │   ├── services/       # External APIs (Gemini, RAG)
-│   │   └── routes/         # API route definitions
-│   ├── prisma/             # Database schema
-│   └── ...
-└── ...
+│   │   ├── controllers/    # Interview, Resume, Auth logic
+│   │   ├── services/       # Gemini, RAG services
+│   │   └── routes/         # API routes
+│   └── prisma/             # Database schema
 ```
+
+## 🔑 Key API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/interview/start` | POST | Start new interview session |
+| `/api/interview/chat` | POST | Send message (+ emotions) to AI |
+| `/api/interview/end` | POST | End session & generate report |
+| `/api/interview/improvement-plan` | POST | Generate personalized coaching plan |
+| `/api/interview/report/:id` | GET | Get session report |
 
 ## 🤝 Contributing
 

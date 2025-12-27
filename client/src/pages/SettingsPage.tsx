@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
 import { useAuth } from '../context/AuthContext';
+import { Key, Shield, Eye, EyeOff } from 'lucide-react';
+
+// API Key localStorage keys
+const API_KEY_STORAGE = {
+    gemini: 'user_gemini_api_key',
+    elevenlabs: 'user_elevenlabs_api_key',
+    hume: 'user_hume_api_key'
+};
 
 export const SettingsPage = () => {
     const { user, logout } = useAuth();
@@ -14,6 +22,37 @@ export const SettingsPage = () => {
     const [emailNotifications, setEmailNotifications] = useState(true);
     const [interviewReminders, setInterviewReminders] = useState(true);
     const [message, setMessage] = useState('');
+
+    // API Keys state
+    const [geminiKey, setGeminiKey] = useState('');
+    const [elevenlabsKey, setElevenlabsKey] = useState('');
+    const [humeKey, setHumeKey] = useState('');
+    const [showKeys, setShowKeys] = useState({ gemini: false, elevenlabs: false, hume: false });
+
+    // Load saved keys on mount
+    useEffect(() => {
+        setGeminiKey(localStorage.getItem(API_KEY_STORAGE.gemini) || '');
+        setElevenlabsKey(localStorage.getItem(API_KEY_STORAGE.elevenlabs) || '');
+        setHumeKey(localStorage.getItem(API_KEY_STORAGE.hume) || '');
+    }, []);
+
+    const handleSaveApiKey = (service: 'gemini' | 'elevenlabs' | 'hume', key: string) => {
+        if (key.trim()) {
+            localStorage.setItem(API_KEY_STORAGE[service], key.trim());
+            setMessage(`${service.charAt(0).toUpperCase() + service.slice(1)} API key saved locally`);
+        } else {
+            localStorage.removeItem(API_KEY_STORAGE[service]);
+            setMessage(`${service.charAt(0).toUpperCase() + service.slice(1)} API key removed`);
+        }
+    };
+
+    const handleClearApiKey = (service: 'gemini' | 'elevenlabs' | 'hume') => {
+        localStorage.removeItem(API_KEY_STORAGE[service]);
+        if (service === 'gemini') setGeminiKey('');
+        if (service === 'elevenlabs') setElevenlabsKey('');
+        if (service === 'hume') setHumeKey('');
+        setMessage(`${service.charAt(0).toUpperCase() + service.slice(1)} API key cleared`);
+    };
 
     const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -100,6 +139,149 @@ export const SettingsPage = () => {
                             {message}
                         </div>
                     )}
+
+                    {/* API Keys Section */}
+                    <GlassCard className="p-6">
+                        <div className="flex items-center gap-2 mb-4">
+                            <Key size={16} className="text-purple-400" />
+                            <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider">API Keys (Optional)</h2>
+                        </div>
+
+                        {/* Security Notice */}
+                        <div className="flex items-start gap-2 p-3 mb-4 rounded bg-green-500/10 border border-green-500/20">
+                            <Shield size={14} className="text-green-400 mt-0.5 shrink-0" />
+                            <div>
+                                <p className="text-xs text-green-400 font-medium">Your keys are secure</p>
+                                <p className="text-xs text-white/40 mt-1">
+                                    API keys are stored <strong>only in your browser's local storage</strong>.
+                                    They are never sent to or stored on our servers.
+                                </p>
+                            </div>
+                        </div>
+
+                        <p className="text-xs text-white/40 mb-4">
+                            Optionally use your own API keys to save platform costs. If not set, we'll use our shared keys.
+                        </p>
+
+                        <div className="space-y-4">
+                            {/* Gemini API Key */}
+                            <div>
+                                <label className="block text-xs text-white/30 mb-2">Google Gemini API Key</label>
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <input
+                                            type={showKeys.gemini ? 'text' : 'password'}
+                                            value={geminiKey}
+                                            onChange={(e) => setGeminiKey(e.target.value)}
+                                            placeholder="AIza..."
+                                            className="w-full px-4 py-3 pr-10 rounded bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
+                                        />
+                                        <button
+                                            onClick={() => setShowKeys(s => ({ ...s, gemini: !s.gemini }))}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+                                        >
+                                            {showKeys.gemini ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                    <button
+                                        onClick={() => handleSaveApiKey('gemini', geminiKey)}
+                                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-xs transition-colors"
+                                    >
+                                        Save
+                                    </button>
+                                    {localStorage.getItem(API_KEY_STORAGE.gemini) && (
+                                        <button
+                                            onClick={() => handleClearApiKey('gemini')}
+                                            className="px-3 py-2 text-white/30 hover:text-white/60 text-xs"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                                {localStorage.getItem(API_KEY_STORAGE.gemini) && (
+                                    <p className="text-[10px] text-green-400 mt-1">✓ Custom key saved</p>
+                                )}
+                            </div>
+
+                            {/* ElevenLabs API Key */}
+                            <div>
+                                <label className="block text-xs text-white/30 mb-2">ElevenLabs API Key</label>
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <input
+                                            type={showKeys.elevenlabs ? 'text' : 'password'}
+                                            value={elevenlabsKey}
+                                            onChange={(e) => setElevenlabsKey(e.target.value)}
+                                            placeholder="sk_..."
+                                            className="w-full px-4 py-3 pr-10 rounded bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
+                                        />
+                                        <button
+                                            onClick={() => setShowKeys(s => ({ ...s, elevenlabs: !s.elevenlabs }))}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+                                        >
+                                            {showKeys.elevenlabs ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                    <button
+                                        onClick={() => handleSaveApiKey('elevenlabs', elevenlabsKey)}
+                                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-xs transition-colors"
+                                    >
+                                        Save
+                                    </button>
+                                    {localStorage.getItem(API_KEY_STORAGE.elevenlabs) && (
+                                        <button
+                                            onClick={() => handleClearApiKey('elevenlabs')}
+                                            className="px-3 py-2 text-white/30 hover:text-white/60 text-xs"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                                {localStorage.getItem(API_KEY_STORAGE.elevenlabs) && (
+                                    <p className="text-[10px] text-green-400 mt-1">✓ Custom key saved</p>
+                                )}
+                            </div>
+
+                            {/* Hume API Key */}
+                            <div>
+                                <label className="block text-xs text-white/30 mb-2">Hume AI API Key</label>
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <input
+                                            type={showKeys.hume ? 'text' : 'password'}
+                                            value={humeKey}
+                                            onChange={(e) => setHumeKey(e.target.value)}
+                                            placeholder="..."
+                                            className="w-full px-4 py-3 pr-10 rounded bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
+                                        />
+                                        <button
+                                            onClick={() => setShowKeys(s => ({ ...s, hume: !s.hume }))}
+                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
+                                        >
+                                            {showKeys.hume ? <EyeOff size={16} /> : <Eye size={16} />}
+                                        </button>
+                                    </div>
+                                    <button
+                                        onClick={() => handleSaveApiKey('hume', humeKey)}
+                                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-xs transition-colors"
+                                    >
+                                        Save
+                                    </button>
+                                    {localStorage.getItem(API_KEY_STORAGE.hume) && (
+                                        <button
+                                            onClick={() => handleClearApiKey('hume')}
+                                            className="px-3 py-2 text-white/30 hover:text-white/60 text-xs"
+                                        >
+                                            Clear
+                                        </button>
+                                    )}
+                                </div>
+                                {localStorage.getItem(API_KEY_STORAGE.hume) && (
+                                    <p className="text-[10px] text-green-400 mt-1">✓ Custom key saved</p>
+                                )}
+                            </div>
+                        </div>
+                    </GlassCard>
 
                     {/* Account */}
                     <GlassCard className="p-6">

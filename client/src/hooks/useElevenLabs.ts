@@ -1,7 +1,23 @@
 import { useState, useCallback, useRef } from 'react';
 
-const ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY;
+const ENV_ELEVENLABS_API_KEY = import.meta.env.VITE_ELEVENLABS_API_KEY || '';
 const VOICE_ID = '21m00Tcm4TlvDq8ikWAM'; // Rachel voice
+
+// Get API key - user's localStorage key takes priority
+const getElevenLabsApiKey = (): string => {
+    const userKey = localStorage.getItem('user_elevenlabs_api_key');
+    // Debug: show which key source is being used
+    if (userKey) {
+        console.log('Using localStorage ElevenLabs key:', userKey.substring(0, 8) + '...');
+        return userKey;
+    }
+    if (ENV_ELEVENLABS_API_KEY) {
+        console.log('Using ENV ElevenLabs key:', ENV_ELEVENLABS_API_KEY.substring(0, 8) + '...');
+        return ENV_ELEVENLABS_API_KEY;
+    }
+    console.warn('No ElevenLabs API key found!');
+    return '';
+};
 
 // Global audio element to ensure only one plays at a time
 let globalAudio: HTMLAudioElement | null = null;
@@ -114,7 +130,7 @@ export const useElevenLabs = () => {
 
     // Send audio to ElevenLabs STT API
     const transcribeAudio = async (audioBlob: Blob, mimeType: string) => {
-        if (!ELEVENLABS_API_KEY) {
+        if (!getElevenLabsApiKey()) {
             setError('ElevenLabs API key is missing');
             return;
         }
@@ -141,10 +157,13 @@ export const useElevenLabs = () => {
                 model_id: 'scribe_v1'
             });
 
+            const apiKey = getElevenLabsApiKey();
+            console.log('Using ElevenLabs key:', apiKey ? `${apiKey.substring(0, 8)}...` : 'MISSING');
+
             const response = await fetch('https://api.elevenlabs.io/v1/speech-to-text', {
                 method: 'POST',
                 headers: {
-                    'xi-api-key': ELEVENLABS_API_KEY.trim()
+                    'xi-api-key': apiKey.trim()
                 },
                 body: formData
             });
@@ -178,7 +197,7 @@ export const useElevenLabs = () => {
 
     // Play TTS response - with lock to prevent duplicates
     const playResponse = useCallback(async (text: string) => {
-        if (!ELEVENLABS_API_KEY) {
+        if (!getElevenLabsApiKey()) {
             console.error('ElevenLabs API key is missing.');
             return;
         }
@@ -205,7 +224,7 @@ export const useElevenLabs = () => {
                 headers: {
                     'Accept': 'audio/mpeg',
                     'Content-Type': 'application/json',
-                    'xi-api-key': ELEVENLABS_API_KEY.trim()
+                    'xi-api-key': getElevenLabsApiKey().trim()
                 },
                 body: JSON.stringify({
                     text,

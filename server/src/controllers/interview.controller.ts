@@ -157,6 +157,7 @@ Focus: ${instructionPrompt || 'General technical interview'}
 export const chat = async (req: Request, res: Response) => {
     try {
         const { sessionId, message, emotions } = req.body;
+        const userGeminiKey = req.headers['x-user-gemini-key'] as string | undefined;
 
         // Get session with system instruction
         const session = await prisma.session.findUnique({
@@ -220,11 +221,12 @@ export const chat = async (req: Request, res: Response) => {
             emotionContext = `\n\n[Candidate's current emotional state: ${topEmotions}. Adapt your tone accordingly.]`;
         }
 
-        // Get AI response with system instruction
+        // Get AI response with system instruction (use user's key if provided)
         const aiResponse = await gemini.generateInterviewResponse(
             systemInstruction + emotionContext,
             conversation,
-            message
+            message,
+            userGeminiKey // Pass user's custom key if available
         );
 
         // Store AI response

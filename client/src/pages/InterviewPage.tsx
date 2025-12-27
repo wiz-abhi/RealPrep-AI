@@ -99,11 +99,13 @@ export const InterviewPage = () => {
 
         try {
             const token = localStorage.getItem('token');
+            const userGeminiKey = localStorage.getItem('user_gemini_api_key');
             const res = await fetch('http://localhost:3000/api/interview/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    ...(userGeminiKey && { 'X-User-Gemini-Key': userGeminiKey })
                 },
                 body: JSON.stringify({ sessionId, message: text, emotions: emotions.slice(0, 3) })
             });
