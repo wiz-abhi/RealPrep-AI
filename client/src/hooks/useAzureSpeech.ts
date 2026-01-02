@@ -12,24 +12,24 @@ const getAzureConfig = () => {
     };
 };
 
-// Global audio element for TTS
-let globalAudio: HTMLAudioElement | null = null;
-let isPlayingLock = false;
-
 export const useAzureSpeech = () => {
     const [transcript, setTranscript] = useState<string>('');
+    const [interimTranscript, setInterimTranscript] = useState<string>('');
     const [isRecording, setIsRecording] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const recognizerRef = useRef<sdk.SpeechRecognizer | null>(null);
+    const synthesizerRef = useRef<sdk.SpeechSynthesizer | null>(null);
+    const playerRef = useRef<sdk.SpeakerAudioDestination | null>(null);
 
-    // Start listening with Azure Speech SDK
+    // Start continuous listening with streaming recognition
     const startListening = useCallback(async () => {
         try {
             setError(null);
             setTranscript('');
+            setInterimTranscript('');
 
             const config = getAzureConfig();
             if (!config.key) {
@@ -37,51 +37,67 @@ export const useAzureSpeech = () => {
                 return;
             }
 
-            console.log('Starting Azure Speech recognition with SDK...');
-            console.log('Region:', config.region);
+            console.log('Starting Azure continuous recognition...');
 
             const speechConfig = sdk.SpeechConfig.fromSubscription(config.key, config.region);
             speechConfig.speechRecognitionLanguage = 'en-US';
+
+            // Enable intermediate results for lower perceived latency
+            speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "1500");
 
             const audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
             const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
             recognizerRef.current = recognizer;
 
-            setIsRecording(true);
+            // Handle real-time partial results (streaming)
+            recognizer.recognizing = (s, e) => {
+                if (e.result.reason === sdk.ResultReason.RecognizingSpeech) {
+                    console.log('Partial:', e.result.text);
+                    setInterimTranscript(e.result.text);
+                }
+            };
+
+            // Handle final result
+            recognizer.recognized = (s, e) => {
+                if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
+                    console.log('Final:', e.result.text);
+                    setTranscript(e.result.text);
+                    setInterimTranscript('');
+                } else if (e.result.reason === sdk.ResultReason.NoMatch) {
+                    console.log('No speech recognized');
+                }
+            };
+
+            recognizer.canceled = (s, e) => {
+                if (e.reason === sdk.CancellationReason.Error) {
+                    console.error('Recognition canceled:', e.errorDetails);
+                    setError(e.errorDetails);
+                }
+                setIsRecording(false);
+                setIsProcessing(false);
+            };
+
+            recognizer.sessionStopped = () => {
+                console.log('Recognition session stopped');
+                setIsRecording(false);
+                setIsProcessing(false);
+            };
 
             // Start continuous recognition
-            recognizer.recognizeOnceAsync(
-                (result) => {
-                    console.log('Recognition result:', result);
-                    setIsRecording(false);
-                    setIsProcessing(false);
-
-                    if (result.reason === sdk.ResultReason.RecognizedSpeech) {
-                        console.log('Recognized:', result.text);
-                        setTranscript(result.text);
-                    } else if (result.reason === sdk.ResultReason.NoMatch) {
-                        console.log('No speech recognized');
-                        setError('No speech detected. Please speak louder or longer.');
-                    } else if (result.reason === sdk.ResultReason.Canceled) {
-                        const cancellation = sdk.CancellationDetails.fromResult(result);
-                        console.error('Recognition canceled:', cancellation.reason, cancellation.errorDetails);
-                        if (cancellation.reason === sdk.CancellationReason.Error) {
-                            setError(`Error: ${cancellation.errorDetails}`);
-                        }
+            await new Promise<void>((resolve, reject) => {
+                recognizer.startContinuousRecognitionAsync(
+                    () => {
+                        console.log('Continuous recognition started');
+                        setIsRecording(true);
+                        resolve();
+                    },
+                    (err) => {
+                        console.error('Failed to start recognition:', err);
+                        setError('Failed to start recording');
+                        reject(err);
                     }
-
-                    recognizer.close();
-                    recognizerRef.current = null;
-                },
-                (err) => {
-                    console.error('Recognition error:', err);
-                    setError('Speech recognition failed');
-                    setIsRecording(false);
-                    setIsProcessing(false);
-                    recognizer.close();
-                    recognizerRef.current = null;
-                }
-            );
+                );
+            });
         } catch (err) {
             console.error('Failed to start recognition:', err);
             setError('Failed to start recording');
@@ -90,29 +106,47 @@ export const useAzureSpeech = () => {
     }, []);
 
     // Stop listening
-    const stopListening = useCallback(() => {
+    const stopListening = useCallback(async () => {
         if (recognizerRef.current) {
-            console.log('Stopping recognition...');
+            console.log('Stopping continuous recognition...');
             setIsProcessing(true);
-            // The recognizeOnceAsync will complete when speech ends or timeout
-            // We can't really "stop" it early with recognizeOnceAsync
-            // For now, just let it complete
+
+            await new Promise<void>((resolve) => {
+                recognizerRef.current!.stopContinuousRecognitionAsync(
+                    () => {
+                        console.log('Recognition stopped');
+                        recognizerRef.current?.close();
+                        recognizerRef.current = null;
+                        setIsRecording(false);
+                        setIsProcessing(false);
+                        resolve();
+                    },
+                    (err) => {
+                        console.error('Failed to stop recognition:', err);
+                        setIsRecording(false);
+                        setIsProcessing(false);
+                        resolve();
+                    }
+                );
+            });
         }
-        setIsRecording(false);
     }, []);
 
-    // Stop any currently playing audio
+    // Stop speaking
     const stopSpeaking = useCallback(() => {
-        if (globalAudio) {
-            globalAudio.pause();
-            globalAudio.currentTime = 0;
-            globalAudio = null;
+        if (synthesizerRef.current) {
+            synthesizerRef.current.close();
+            synthesizerRef.current = null;
         }
-        isPlayingLock = false;
+        if (playerRef.current) {
+            playerRef.current.pause();
+            playerRef.current.close();
+            playerRef.current = null;
+        }
         setIsSpeaking(false);
     }, []);
 
-    // Play TTS response using Azure REST API (TTS works fine with REST)
+    // Streaming TTS with SpeechSynthesizer
     const playResponse = useCallback(async (text: string) => {
         const config = getAzureConfig();
 
@@ -121,87 +155,64 @@ export const useAzureSpeech = () => {
             return;
         }
 
-        // Prevent multiple simultaneous playbacks
-        if (isPlayingLock) {
-            console.log('Audio already playing, stopping previous...');
-            stopSpeaking();
-            await new Promise(resolve => setTimeout(resolve, 100));
-        }
+        // Stop any previous speech
+        stopSpeaking();
 
-        isPlayingLock = true;
         setIsSpeaking(true);
 
         try {
-            // Azure TTS REST API endpoint
-            const endpoint = `https://${config.region}.tts.speech.microsoft.com/cognitiveservices/v1`;
+            console.log('Starting streaming TTS...');
 
-            // SSML for more natural speech
-            const ssml = `
-                <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>
-                    <voice name='en-US-JennyNeural'>
-                        ${text.replace(/[<>&'"]/g, c => ({
-                '<': '&lt;',
-                '>': '&gt;',
-                '&': '&amp;',
-                "'": '&apos;',
-                '"': '&quot;'
-            }[c] || c))}
-                    </voice>
-                </speak>
-            `;
+            const speechConfig = sdk.SpeechConfig.fromSubscription(config.key, config.region);
+            speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural';
 
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: {
-                    'Ocp-Apim-Subscription-Key': config.key,
-                    'Content-Type': 'application/ssml+xml',
-                    'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3'
+            // Create speaker output for streaming
+            const player = new sdk.SpeakerAudioDestination();
+            playerRef.current = player;
+
+            player.onAudioEnd = () => {
+                console.log('TTS playback finished');
+                setIsSpeaking(false);
+            };
+
+            const audioConfig = sdk.AudioConfig.fromSpeakerOutput(player);
+            const synthesizer = new sdk.SpeechSynthesizer(speechConfig, audioConfig);
+            synthesizerRef.current = synthesizer;
+
+            // Handle streaming events
+            synthesizer.synthesizing = (s, e) => {
+                // Audio data is being streamed
+                console.log('TTS streaming chunk received:', e.result.audioData?.byteLength, 'bytes');
+            };
+
+            // Start streaming synthesis
+            synthesizer.speakTextAsync(
+                text,
+                (result) => {
+                    if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
+                        console.log('TTS synthesis completed');
+                    } else if (result.reason === sdk.ResultReason.Canceled) {
+                        const cancellation = sdk.CancellationDetails.fromResult(result);
+                        console.error('TTS canceled:', cancellation.reason, cancellation.errorDetails);
+                        setError(`TTS failed: ${cancellation.errorDetails}`);
+                        setIsSpeaking(false);
+                    }
                 },
-                body: ssml
-            });
-
-            if (!response.ok) {
-                const errorText = await response.text();
-                console.error('Azure TTS error:', response.status, errorText);
-                throw new Error(`Azure TTS failed: ${response.status}`);
-            }
-
-            const audioBlob = await response.blob();
-            const audioUrl = URL.createObjectURL(audioBlob);
-
-            // Stop any previous audio
-            if (globalAudio) {
-                globalAudio.pause();
-                URL.revokeObjectURL(globalAudio.src);
-            }
-
-            globalAudio = new Audio(audioUrl);
-
-            globalAudio.onended = () => {
-                isPlayingLock = false;
-                setIsSpeaking(false);
-                URL.revokeObjectURL(audioUrl);
-                globalAudio = null;
-            };
-
-            globalAudio.onerror = (e) => {
-                console.error('Audio playback error:', e);
-                isPlayingLock = false;
-                setIsSpeaking(false);
-                URL.revokeObjectURL(audioUrl);
-                globalAudio = null;
-            };
-
-            await globalAudio.play();
+                (err) => {
+                    console.error('TTS error:', err);
+                    setError('TTS failed');
+                    setIsSpeaking(false);
+                }
+            );
         } catch (err) {
-            console.error('Azure TTS error:', err);
-            isPlayingLock = false;
+            console.error('TTS error:', err);
             setIsSpeaking(false);
         }
     }, [stopSpeaking]);
 
     return {
         transcript,
+        interimTranscript,
         isRecording,
         isProcessing,
         isSpeaking,

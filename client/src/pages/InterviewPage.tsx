@@ -27,12 +27,15 @@ export const InterviewPage = () => {
 
     const {
         transcript,
+        interimTranscript,
         isRecording,
         isProcessing,
+        isSpeaking,
         error: audioError,
         startRecording,
         stopRecording,
         playResponse,
+        stopSpeaking,
         provider: speechProvider
     } = useSpeech();
 
@@ -122,14 +125,21 @@ export const InterviewPage = () => {
     const lastSentTranscript = useRef<string>('');
 
     // Handle voice transcript when transcription completes
+    // With continuous recognition, transcript updates when speech is recognized
     useEffect(() => {
-        console.log('Transcript effect:', { isRecording, isProcessing, transcript, voiceMode });
-        if (!isRecording && !isProcessing && transcript && voiceMode && transcript !== lastSentTranscript.current) {
+        console.log('Transcript effect:', { isRecording, transcript, voiceMode, lastSent: lastSentTranscript.current });
+
+        // Send if we have a new transcript that's different from the last sent one
+        if (transcript && voiceMode && transcript !== lastSentTranscript.current) {
             console.log('Sending transcribed message:', transcript);
             lastSentTranscript.current = transcript;
+
+            // Stop recording before sending (so we don't pick up AI speech)
+            stopRecording();
+
             handleSendMessage(transcript);
         }
-    }, [isRecording, isProcessing, transcript, voiceMode, handleSendMessage]);
+    }, [transcript, voiceMode, handleSendMessage, stopRecording]);
 
     const handleTextSubmit = (e: React.FormEvent) => {
         e.preventDefault();

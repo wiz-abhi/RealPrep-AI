@@ -32,6 +32,7 @@ export const useSpeech = () => {
     if (SPEECH_PROVIDER === 'azure') {
         return {
             transcript: azureSpeech.transcript,
+            interimTranscript: azureSpeech.interimTranscript || '',
             isRecording: azureSpeech.isRecording,
             isProcessing: azureSpeech.isProcessing,
             isSpeaking: azureSpeech.isSpeaking,
@@ -46,6 +47,7 @@ export const useSpeech = () => {
 
     return {
         transcript: elevenLabs.transcript,
+        interimTranscript: '', // ElevenLabs doesn't have interim transcripts
         isRecording: elevenLabs.isRecording,
         isProcessing: elevenLabs.isProcessing,
         isSpeaking: elevenLabs.isSpeaking,
