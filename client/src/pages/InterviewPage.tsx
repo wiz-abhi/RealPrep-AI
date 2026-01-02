@@ -83,6 +83,7 @@ export const InterviewPage = () => {
                 }
 
                 const data = await res.json();
+                console.log('Session Loaded:', data);
                 const session = data.data;
 
                 // Set timer values
@@ -94,6 +95,8 @@ export const InterviewPage = () => {
                 const endTime = startTime + (session.durationMinutes * 60 * 1000);
                 const now = Date.now();
                 const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+
+                console.log('Timer Init:', { startedAt: session.startedAt, duration: session.durationMinutes, remaining });
                 setRemainingSeconds(remaining);
 
                 // Load existing transcript
@@ -102,7 +105,18 @@ export const InterviewPage = () => {
                         sender: t.sender,
                         text: t.text
                     })));
-                    setHasPlayedInitial(true); // Don't replay initial greeting
+
+                    // Play the last AI message (greeting or continuation)
+                    const lastMessage = session.transcript[session.transcript.length - 1];
+                    if (lastMessage.sender === 'ai') {
+                        console.log('Auto-playing last AI message');
+                        setTimeout(() => {
+                            // Use ref or just assume voiceMode is default true on load
+                            playResponse(lastMessage.text);
+                        }, 1000);
+                    }
+
+                    setHasPlayedInitial(true);
                 }
 
                 setSessionLoading(false);
@@ -114,7 +128,7 @@ export const InterviewPage = () => {
         };
 
         fetchSession();
-    }, [sessionId, navigate]);
+    }, [sessionId, navigate, playResponse]);
 
     // Countdown timer
     useEffect(() => {
@@ -344,6 +358,30 @@ export const InterviewPage = () => {
     // Determine timer color based on remaining time
     const timerColor = remainingSeconds < 60 ? 'text-red-400 animate-pulse' :
         remainingSeconds < 300 ? 'text-yellow-400' : 'text-green-400';
+
+    if (sessionLoading) {
+        return (
+            <div className="h-screen bg-black text-white flex items-center justify-center">
+                <div className="flex flex-col items-center gap-3">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white/50"></div>
+                    <p className="text-xs text-white/50">Loading session...</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (sessionError) {
+        return (
+            <div className="h-screen bg-black text-white flex items-center justify-center">
+                <div className="text-red-400 bg-red-500/10 border border-red-500/20 px-6 py-4 rounded-lg text-sm">
+                    {sessionError}
+                    <button onClick={() => navigate('/dashboard')} className="block mt-4 text-xs text-white/50 hover:text-white underline mx-auto">
+                        Return to Dashboard
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="h-screen bg-black text-white flex flex-col">
