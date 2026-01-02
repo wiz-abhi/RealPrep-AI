@@ -13,6 +13,7 @@ export const InterviewSetupPage = () => {
     const [instructionPrompt, setInstructionPrompt] = useState('');
     const [referenceFile, setReferenceFile] = useState<File | null>(null);
     const [referenceType, setReferenceType] = useState<'SamplePaper' | 'JobDescription'>('JobDescription');
+    const [durationMinutes, setDurationMinutes] = useState(30);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState('');
 
@@ -63,7 +64,8 @@ export const InterviewSetupPage = () => {
                 body: JSON.stringify({
                     userId: user?.id,
                     resumeId,
-                    instructionPrompt: instructionPrompt || 'Conduct a comprehensive technical interview focusing on my skills and experience.'
+                    instructionPrompt: instructionPrompt || 'Conduct a comprehensive technical interview focusing on my skills and experience.',
+                    durationMinutes
                 })
             });
 
@@ -142,6 +144,30 @@ export const InterviewSetupPage = () => {
                                 ))}
                             </div>
                         </div>
+                    </GlassCard>
+
+                    {/* Interview Duration */}
+                    <GlassCard className="p-6">
+                        <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">
+                            Interview Duration
+                        </h2>
+                        <div className="flex flex-wrap gap-2">
+                            {[15, 20, 30, 45, 60].map((mins) => (
+                                <button
+                                    key={mins}
+                                    onClick={() => setDurationMinutes(mins)}
+                                    className={`px-4 py-2 text-sm rounded border transition-all ${durationMinutes === mins
+                                            ? 'bg-white text-black border-white'
+                                            : 'bg-white/5 text-white/60 border-white/10 hover:border-white/20'
+                                        }`}
+                                >
+                                    {mins} min
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-xs text-white/30 mt-3">
+                            Interview will auto-save when time expires
+                        </p>
                     </GlassCard>
 
                     {/* Reference Documents */}

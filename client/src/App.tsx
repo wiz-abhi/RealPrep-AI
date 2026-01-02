@@ -41,7 +41,7 @@ function App() {
             <Route path="/analyze" element={<ProtectedRoute><ResumeAnalysisPage /></ProtectedRoute>} />
             <Route path="/interview-setup" element={<ProtectedRoute><InterviewSetupPage /></ProtectedRoute>} />
             <Route path="/pre-join" element={<ProtectedRoute><PreJoinPage /></ProtectedRoute>} />
-            <Route path="/interview" element={<ProtectedRoute><InterviewPage /></ProtectedRoute>} />
+            <Route path="/interview/:sessionId" element={<ProtectedRoute><InterviewPage /></ProtectedRoute>} />
             <Route path="/report/:sessionId" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
             <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />

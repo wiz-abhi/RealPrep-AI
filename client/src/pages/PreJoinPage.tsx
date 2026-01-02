@@ -68,7 +68,8 @@ export const PreJoinPage = () => {
     };
 
     const handleBegin = () => {
-        navigate('/interview', { state: { sessionId, agentArgs, duration } });
+        // Navigate with sessionId in URL for persistence on reload
+        navigate(`/interview/${sessionId}`);
     };
 
     return (
@@ -114,8 +115,8 @@ export const PreJoinPage = () => {
                                         key={d}
                                         onClick={() => setDuration(d)}
                                         className={`px-3 py-1.5 rounded text-xs transition-all ${duration === d
-                                                ? 'bg-white/10 text-white border border-white/20'
-                                                : 'bg-white/5 text-white/40 border border-white/5 hover:bg-white/10'
+                                            ? 'bg-white/10 text-white border border-white/20'
+                                            : 'bg-white/5 text-white/40 border border-white/5 hover:bg-white/10'
                                             }`}
                                     >
                                         {d} min

@@ -42,7 +42,7 @@ Remember: You are conducting a real interview. Be conversational, ask follow-up 
 
 export const startSession = async (req: Request, res: Response) => {
     try {
-        const { userId, resumeId, instructionPrompt, interviewType = 'technical' } = req.body;
+        const { userId, resumeId, instructionPrompt, interviewType = 'technical', durationMinutes = 30 } = req.body;
 
         if (!userId || !resumeId) {
             return res.status(400).json({ error: 'Missing required fields' });
@@ -111,6 +111,7 @@ Focus: ${instructionPrompt || 'General technical interview'}
         const initialMessage = await gemini.generateInitialGreeting(systemInstruction, candidateContext);
 
         // Create session with system instruction stored
+        const startedAt = new Date().toISOString();
         const session = await retryDbOperation(() => prisma.session.create({
             data: {
                 userId,
@@ -120,7 +121,9 @@ Focus: ${instructionPrompt || 'General technical interview'}
                 feedback: {
                     systemInstruction,
                     resumeContext: ragContext,
-                    skills
+                    skills,
+                    startedAt,
+                    durationMinutes: Number(durationMinutes)
                 }
             }
         }));
@@ -151,6 +154,49 @@ Focus: ${instructionPrompt || 'General technical interview'}
     } catch (error) {
         console.error('Start session error:', error);
         res.status(500).json({ error: 'Failed to start session' });
+    }
+};
+
+// Get session details for resuming an interview
+export const getSession = async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.params;
+
+        const session = await prisma.session.findUnique({
+            where: { id: sessionId },
+            include: {
+                transcript: {
+                    orderBy: { timestamp: 'asc' }
+                }
+            }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        const feedback = session.feedback as any;
+
+        res.json({
+            success: true,
+            data: {
+                sessionId: session.id,
+                status: session.status,
+                type: session.type,
+                startedAt: feedback?.startedAt || session.createdAt.toISOString(),
+                durationMinutes: feedback?.durationMinutes || 30,
+                transcript: session.transcript.map(t => ({
+                    sender: t.sender,
+                    text: t.text,
+                    timestamp: t.timestamp
+                })),
+                skills: feedback?.skills || [],
+                interviewType: session.type
+            }
+        });
+    } catch (error) {
+        console.error('Get session error:', error);
+        res.status(500).json({ error: 'Failed to get session' });
     }
 };
 

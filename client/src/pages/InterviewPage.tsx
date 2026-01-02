@@ -1,16 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Webcam from 'react-webcam';
 import { CodeEditor } from '../components/ui/CodeEditor';
 import { useSpeech } from '../hooks/useSpeech';
 import { useHumeVision } from '../hooks/useHumeVision';
-import { Mic, MicOff, Square, Code, MessageSquare, X, Send } from 'lucide-react';
+import { Mic, MicOff, Square, Code, MessageSquare, X, Send, Clock } from 'lucide-react';
 
 export const InterviewPage = () => {
-    const location = useLocation();
+    const { sessionId } = useParams<{ sessionId: string }>();
     const navigate = useNavigate();
-    const { sessionId, agentArgs } = location.state || {};
     const { user } = useAuth();
 
     const [showChat, setShowChat] = useState(false);
@@ -20,6 +19,14 @@ export const InterviewPage = () => {
     const [textInput, setTextInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [showEndModal, setShowEndModal] = useState(false);
+    const [sessionLoading, setSessionLoading] = useState(true);
+    const [sessionError, setSessionError] = useState<string | null>(null);
+
+    // Timer state
+    const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
+    const [startedAt, setStartedAt] = useState<string>('');
+    const [durationMinutes, setDurationMinutes] = useState<number>(30);
+
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -55,19 +62,99 @@ export const InterviewPage = () => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Auto-play AI's initial greeting when page loads
+    // Fetch session details on mount
     useEffect(() => {
-        if (agentArgs?.initialMessage && !hasPlayedInitial) {
-            setHasPlayedInitial(true);
-            setMessages([{ sender: 'ai', text: agentArgs.initialMessage }]);
-            if (voiceMode) {
-                setTimeout(() => {
-                    playResponse(agentArgs.initialMessage);
-                }, 500);
+        const fetchSession = async () => {
+            if (!sessionId) {
+                setSessionError('No session ID provided');
+                setSessionLoading(false);
+                navigate('/dashboard');
+                return;
             }
+
+            try {
+                const token = localStorage.getItem('token');
+                const res = await fetch(`http://localhost:3000/api/interview/session/${sessionId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (!res.ok) {
+                    throw new Error('Session not found');
+                }
+
+                const data = await res.json();
+                const session = data.data;
+
+                // Set timer values
+                setStartedAt(session.startedAt);
+                setDurationMinutes(session.durationMinutes);
+
+                // Calculate remaining time
+                const startTime = new Date(session.startedAt).getTime();
+                const endTime = startTime + (session.durationMinutes * 60 * 1000);
+                const now = Date.now();
+                const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+                setRemainingSeconds(remaining);
+
+                // Load existing transcript
+                if (session.transcript && session.transcript.length > 0) {
+                    setMessages(session.transcript.map((t: any) => ({
+                        sender: t.sender,
+                        text: t.text
+                    })));
+                    setHasPlayedInitial(true); // Don't replay initial greeting
+                }
+
+                setSessionLoading(false);
+            } catch (error) {
+                console.error('Failed to fetch session:', error);
+                setSessionError('Failed to load session');
+                setSessionLoading(false);
+            }
+        };
+
+        fetchSession();
+    }, [sessionId, navigate]);
+
+    // Countdown timer
+    useEffect(() => {
+        if (remainingSeconds <= 0) return;
+
+        const timer = setInterval(() => {
+            setRemainingSeconds(prev => {
+                if (prev <= 1) {
+                    clearInterval(timer);
+                    // Auto-end session when time is up - will be handled after render
+                    return 0;
+                }
+                return prev - 1;
+            });
+        }, 1000);
+
+        return () => clearInterval(timer);
+    }, [remainingSeconds]);
+
+    // Auto-end when timer reaches 0
+    useEffect(() => {
+        if (remainingSeconds === 0 && startedAt && !sessionLoading) {
+            // Timer has expired - auto-save and end
+            handleAutoEnd();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [agentArgs, hasPlayedInitial, voiceMode]);
+    }, [remainingSeconds, startedAt, sessionLoading]);
+
+    const handleAutoEnd = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            await fetch('http://localhost:3000/api/interview/end', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ sessionId })
+            });
+            navigate(`/report/${sessionId}`);
+        } catch (error) {
+            console.error('Auto-end error:', error);
+        }
+    };
 
     useEffect(() => {
         connectVision();
@@ -247,6 +334,17 @@ export const InterviewPage = () => {
         </form>
     );
 
+    // Format seconds to MM:SS
+    const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Determine timer color based on remaining time
+    const timerColor = remainingSeconds < 60 ? 'text-red-400 animate-pulse' :
+        remainingSeconds < 300 ? 'text-yellow-400' : 'text-green-400';
+
     return (
         <div className="h-screen bg-black text-white flex flex-col">
             {/* Header */}
@@ -265,9 +363,16 @@ export const InterviewPage = () => {
                         {voiceMode ? '🎤 Voice' : '⌨️ Text'}
                     </span>
                 </div>
-                <button onClick={handleEndInterviewClick} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5">
-                    End Interview
-                </button>
+                <div className="flex items-center gap-4">
+                    {/* Timer */}
+                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded border border-white/10 ${timerColor}`}>
+                        <Clock className="w-3.5 h-3.5" />
+                        <span className="text-sm font-mono">{formatTime(remainingSeconds)}</span>
+                    </div>
+                    <button onClick={handleEndInterviewClick} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5">
+                        End Interview
+                    </button>
+                </div>
             </header>
 
             {/* End Interview Confirmation Modal */}

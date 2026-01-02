@@ -170,7 +170,7 @@ export const HistoryPage = () => {
                                                     if (session.status === 'completed') {
                                                         navigate(`/report/${session.id}`);
                                                     } else {
-                                                        navigate('/interview', { state: { sessionId: session.id } });
+                                                        navigate(`/interview/${session.id}`);
                                                     }
                                                 }}
                                                 className="btn-secondary text-xs"
