@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Webcam from 'react-webcam';
 import { CodeEditor } from '../components/ui/CodeEditor';
-import { useElevenLabs } from '../hooks/useElevenLabs';
+import { useSpeech } from '../hooks/useSpeech';
 import { useHumeVision } from '../hooks/useHumeVision';
 import { Mic, MicOff, Square, Code, MessageSquare, X, Send } from 'lucide-react';
 
@@ -33,8 +33,8 @@ export const InterviewPage = () => {
         startRecording,
         stopRecording,
         playResponse,
-        audioRef
-    } = useElevenLabs();
+        provider: speechProvider
+    } = useSpeech();
 
     const {
         connect: connectVision,
@@ -84,12 +84,6 @@ export const InterviewPage = () => {
         return () => clearInterval(interval);
     }, [sendFrame]);
 
-    // Handle voice transcript when transcription completes
-    useEffect(() => {
-        if (!isRecording && !isProcessing && transcript && voiceMode) {
-            handleSendMessage(transcript);
-        }
-    }, [isRecording, isProcessing, transcript]);
 
     const handleSendMessage = useCallback(async (text: string) => {
         if (!text.trim() || isLoading) return;
@@ -123,6 +117,19 @@ export const InterviewPage = () => {
             setIsLoading(false);
         }
     }, [sessionId, emotions, voiceMode, playResponse, isLoading]);
+
+    // Track the last sent transcript to prevent duplicate sends
+    const lastSentTranscript = useRef<string>('');
+
+    // Handle voice transcript when transcription completes
+    useEffect(() => {
+        console.log('Transcript effect:', { isRecording, isProcessing, transcript, voiceMode });
+        if (!isRecording && !isProcessing && transcript && voiceMode && transcript !== lastSentTranscript.current) {
+            console.log('Sending transcribed message:', transcript);
+            lastSentTranscript.current = transcript;
+            handleSendMessage(transcript);
+        }
+    }, [isRecording, isProcessing, transcript, voiceMode, handleSendMessage]);
 
     const handleTextSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -316,7 +323,6 @@ export const InterviewPage = () => {
                                             {!isRecording ? 'Speaking' : 'Listening'}
                                         </div>
                                     </div>
-                                    <audio ref={audioRef} className="hidden" />
                                 </div>
 
                                 {/* Chat */}
@@ -448,7 +454,6 @@ export const InterviewPage = () => {
                                             {!isRecording ? 'Speaking...' : 'Listening'}
                                         </div>
                                     </div>
-                                    <audio ref={audioRef} className="hidden" />
                                     <div className="absolute bottom-3 left-3 bg-black/70 px-2 py-1 rounded text-xs text-white/60">AI Interviewer</div>
                                 </div>
 
