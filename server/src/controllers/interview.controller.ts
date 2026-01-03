@@ -200,6 +200,45 @@ export const getSession = async (req: Request, res: Response) => {
     }
 };
 
+// Update session duration (for PreJoinPage override)
+export const updateSessionDuration = async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.params;
+        const { durationMinutes } = req.body;
+
+        const session = await prisma.session.findUnique({
+            where: { id: sessionId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        const currentFeedback = (session.feedback as any) || {};
+
+        // Update feedback with new duration and reset startedAt to now
+        const updatedFeedback = {
+            ...currentFeedback,
+            durationMinutes: Number(durationMinutes),
+            startedAt: new Date().toISOString() // Reset start time when duration changes
+        };
+
+        await prisma.session.update({
+            where: { id: sessionId },
+            data: { feedback: updatedFeedback }
+        });
+
+        res.json({
+            success: true,
+            message: 'Duration updated',
+            data: { durationMinutes: Number(durationMinutes) }
+        });
+    } catch (error) {
+        console.error('Update duration error:', error);
+        res.status(500).json({ error: 'Failed to update duration' });
+    }
+};
+
 export const chat = async (req: Request, res: Response) => {
     try {
         const { sessionId, message, emotions } = req.body;

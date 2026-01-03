@@ -9,8 +9,9 @@ export const PreJoinPage = () => {
     const navigate = useNavigate();
     const { sessionId, agentArgs } = location.state || {};
 
-    const [duration, setDuration] = useState(15); // Default 15 minutes
-    const durationOptions = [10, 15, 20, 30, 45, 60];
+    // Duration can be overridden here
+    const [duration, setDuration] = useState(15);
+    const durationOptions = [5, 10, 15, 30];
 
     const [checks, setChecks] = useState([
         { id: 'init', label: 'Initializing AI process', status: 'pending' },
@@ -67,7 +68,18 @@ export const PreJoinPage = () => {
         setAllChecksPassed(true);
     };
 
-    const handleBegin = () => {
+    const handleBegin = async () => {
+        // Update session duration before starting
+        try {
+            const token = localStorage.getItem('token');
+            await fetch(`http://localhost:3000/api/interview/session/${sessionId}/duration`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ durationMinutes: duration })
+            });
+        } catch (error) {
+            console.error('Failed to update duration:', error);
+        }
         // Navigate with sessionId in URL for persistence on reload
         navigate(`/interview/${sessionId}`);
     };
@@ -103,7 +115,7 @@ export const PreJoinPage = () => {
                             </div>
                         </GlassCard>
 
-                        {/* Duration Selector */}
+                        {/* Duration Selector - Override if needed */}
                         <GlassCard className="p-4">
                             <div className="flex items-center gap-3 mb-3">
                                 <Clock size={16} className="text-white/40" />
@@ -125,7 +137,7 @@ export const PreJoinPage = () => {
                             </div>
                         </GlassCard>
 
-                        <div className="flex justify-between text-xs text-white/30 px-1">
+                        <div className="flex justify-between text-xs text-white/30 px-1 mt-2">
                             <span>Position: {agentArgs?.jobTitle || 'Software Developer'}</span>
                             <span>Duration: {duration} min</span>
                         </div>
@@ -157,7 +169,7 @@ export const PreJoinPage = () => {
                                     onClick={handleBegin}
                                     className="btn-primary w-full text-sm tracking-wide"
                                 >
-                                    Begin Interview ({duration} min)
+                                    Begin Interview
                                 </button>
                             ) : (
                                 <div className="h-12" />

@@ -5,7 +5,7 @@ import Webcam from 'react-webcam';
 import { CodeEditor } from '../components/ui/CodeEditor';
 import { useSpeech } from '../hooks/useSpeech';
 import { useHumeVision } from '../hooks/useHumeVision';
-import { Mic, MicOff, Square, Code, MessageSquare, X, Send, Clock } from 'lucide-react';
+import { Mic, MicOff, Square, Code, MessageSquare, X, Send, Clock, Bot } from 'lucide-react';
 
 export const InterviewPage = () => {
     const { sessionId } = useParams<{ sessionId: string }>();
@@ -91,12 +91,17 @@ export const InterviewPage = () => {
                 setDurationMinutes(session.durationMinutes);
 
                 // Calculate remaining time
-                const startTime = new Date(session.startedAt).getTime();
+                let startTime = new Date(session.startedAt).getTime();
+                if (isNaN(startTime)) {
+                    console.warn('Invalid startedAt date, defaulting to now');
+                    startTime = Date.now();
+                }
+
                 const endTime = startTime + (session.durationMinutes * 60 * 1000);
                 const now = Date.now();
                 const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
 
-                console.log('Timer Init:', { startedAt: session.startedAt, duration: session.durationMinutes, remaining });
+                console.log('Timer Init:', { startedAt: session.startedAt, duration: session.durationMinutes, remaining, startTime, endTime, now });
                 setRemainingSeconds(remaining);
 
                 // Load existing transcript
@@ -255,11 +260,13 @@ export const InterviewPage = () => {
 
     // Show confirmation modal when clicking End Interview
     const handleEndInterviewClick = () => {
+        stopSpeaking(); // Stop AI speech when ending
         setShowEndModal(true);
     };
 
     // Save transcript and generate report
     const handleSaveReport = async () => {
+        stopSpeaking(); // Ensure speech stops
         try {
             const token = localStorage.getItem('token');
             await fetch('http://localhost:3000/api/interview/end', {
@@ -275,6 +282,7 @@ export const InterviewPage = () => {
 
     // Close immediately without saving
     const handleCloseImmediately = async () => {
+        stopSpeaking(); // Ensure speech stops
         try {
             const token = localStorage.getItem('token');
             // End session without generating AI report (saves Gemini tokens)
@@ -292,11 +300,25 @@ export const InterviewPage = () => {
 
     // Toggle between voice and text mode
     const toggleVoiceMode = () => {
+        stopSpeaking(); // Stop AI speech when switching modes
         setVoiceMode(!voiceMode);
         if (voiceMode) {
             setShowChat(true);
         }
     };
+
+    // Wrapper to stop AI speech when user starts recording
+    const handleStartRecording = () => {
+        stopSpeaking(); // Stop AI speech when user starts speaking
+        startRecording();
+    };
+
+    // Cleanup on component unmount (tab close, navigation)
+    useEffect(() => {
+        return () => {
+            stopSpeaking();
+        };
+    }, [stopSpeaking]);
 
     // Render messages list
     const renderMessages = () => (
@@ -350,14 +372,15 @@ export const InterviewPage = () => {
 
     // Format seconds to MM:SS
     const formatTime = (seconds: number) => {
+        if (typeof seconds !== 'number' || isNaN(seconds) || seconds < 0) return '00:00';
         const mins = Math.floor(seconds / 60);
         const secs = seconds % 60;
         return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
     // Determine timer color based on remaining time
-    const timerColor = remainingSeconds < 60 ? 'text-red-400 animate-pulse' :
-        remainingSeconds < 300 ? 'text-yellow-400' : 'text-green-400';
+    const timerColor = remainingSeconds < 60 ? 'text-red-500' :
+        remainingSeconds < 300 ? 'text-yellow-400' : 'text-emerald-400';
 
     if (sessionLoading) {
         return (
@@ -384,9 +407,22 @@ export const InterviewPage = () => {
     }
 
     return (
-        <div className="h-screen bg-black text-white flex flex-col">
-            {/* Header */}
-            <header className="h-14 shrink-0 flex items-center justify-between px-6 border-b border-white/5">
+        <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
+            {/* FLOATING TIMER - Always visible in top-right */}
+            <div className="fixed top-20 right-6 z-50">
+                <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900 rounded-xl border border-white/20 shadow-2xl">
+                    <Clock className="w-5 h-5 text-white/70" />
+                    <div className="flex flex-col leading-none">
+                        <span className="text-[9px] text-white/50 uppercase tracking-wider">Time Left</span>
+                        <span className={`text-xl font-mono font-bold ${timerColor}`}>
+                            {formatTime(remainingSeconds)}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Header with status indicators */}
+            <header className="h-12 shrink-0 flex items-center justify-between px-6 border-b border-white/5 bg-black/50">
                 <div className="flex items-center gap-4">
                     <h2 className="text-sm font-light text-white/70">
                         Technical Interview
@@ -401,16 +437,9 @@ export const InterviewPage = () => {
                         {voiceMode ? '🎤 Voice' : '⌨️ Text'}
                     </span>
                 </div>
-                <div className="flex items-center gap-4">
-                    {/* Timer */}
-                    <div className={`flex items-center gap-1.5 px-3 py-1 rounded border border-white/10 ${timerColor}`}>
-                        <Clock className="w-3.5 h-3.5" />
-                        <span className="text-sm font-mono">{formatTime(remainingSeconds)}</span>
-                    </div>
-                    <button onClick={handleEndInterviewClick} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5">
-                        End Interview
-                    </button>
-                </div>
+                <button onClick={handleEndInterviewClick} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5 transition-colors">
+                    End Interview
+                </button>
             </header>
 
             {/* End Interview Confirmation Modal */}
@@ -450,7 +479,7 @@ export const InterviewPage = () => {
             )}
 
             {/* Main Area */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex overflow-hidden pt-2">
                 <div className="flex-1 flex flex-col">
                     {/* Video/Grid Container */}
                     <div className="flex-1 p-4 overflow-hidden">
@@ -468,8 +497,9 @@ export const InterviewPage = () => {
                                 {/* AI Cam */}
                                 <div className="relative bg-gradient-to-b from-[#0a0a0a] to-black border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
                                     <div className="text-center">
-                                        <div className="w-16 h-16 mx-auto rounded-full overflow-hidden border border-white/10 mb-2">
-                                            <img src="https://img.freepik.com/free-photo/portrait-young-businesswoman-holding-eyeglasses-hand-against-gray-backdrop_23-2148029483.jpg" alt="AI" className="w-full h-full object-cover opacity-70" />
+                                        <div className="w-16 h-16 mx-auto rounded-full overflow-hidden border border-white/10 mb-2 bg-zinc-900 flex items-center justify-center relative">
+                                            <div className="absolute inset-0 bg-blue-500/10 animate-pulse" />
+                                            <Bot size={32} className="text-white/80 relative z-10" />
                                         </div>
                                         <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] border ${!isRecording ? 'bg-white/5 text-white/60 border-white/10' : 'text-white/30 border-white/5'}`}>
                                             <span className={`w-1 h-1 rounded-full ${!isRecording ? 'bg-white animate-pulse' : 'bg-white/20'}`} />
@@ -599,8 +629,9 @@ export const InterviewPage = () => {
                                 {/* AI Cam */}
                                 <div className="flex-1 relative bg-gradient-to-b from-[#0a0a0a] to-black border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
                                     <div className="text-center">
-                                        <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border border-white/10 mb-4">
-                                            <img src="https://img.freepik.com/free-photo/portrait-young-businesswoman-holding-eyeglasses-hand-against-gray-backdrop_23-2148029483.jpg" alt="AI" className="w-full h-full object-cover opacity-70" />
+                                        <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border border-white/10 mb-4 bg-zinc-900 flex items-center justify-center relative">
+                                            <div className="absolute inset-0 bg-blue-500/20 animate-pulse" />
+                                            <Bot size={48} className="text-white/80 relative z-10" />
                                         </div>
                                         <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border ${!isRecording ? 'bg-white/5 text-white/60 border-white/10' : 'text-white/30 border-white/5'}`}>
                                             <span className={`w-1.5 h-1.5 rounded-full ${!isRecording ? 'bg-white animate-pulse' : 'bg-white/20'}`} />
@@ -631,7 +662,7 @@ export const InterviewPage = () => {
                         {voiceMode ? (
                             <>
                                 <button
-                                    onClick={startRecording}
+                                    onClick={handleStartRecording}
                                     disabled={isRecording}
                                     className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-white/5 text-white/20' : 'bg-white/10 text-white hover:bg-white/15 border border-white/10'}`}
                                 >

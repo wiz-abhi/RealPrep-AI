@@ -152,13 +152,13 @@ export const InterviewSetupPage = () => {
                             Interview Duration
                         </h2>
                         <div className="flex flex-wrap gap-2">
-                            {[15, 20, 30, 45, 60].map((mins) => (
+                            {[5, 10, 15, 30].map((mins) => (
                                 <button
                                     key={mins}
                                     onClick={() => setDurationMinutes(mins)}
                                     className={`px-4 py-2 text-sm rounded border transition-all ${durationMinutes === mins
-                                            ? 'bg-white text-black border-white'
-                                            : 'bg-white/5 text-white/60 border-white/10 hover:border-white/20'
+                                        ? 'bg-white text-black border-white'
+                                        : 'bg-white/5 text-white/60 border-white/10 hover:border-white/20'
                                         }`}
                                 >
                                     {mins} min
