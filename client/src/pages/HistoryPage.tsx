@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -18,7 +19,7 @@ export const HistoryPage = () => {
     const fetchHistory = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/interview/history', {
+            const res = await fetch(`${API_BASE_URL}/api/interview/history`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -36,7 +37,7 @@ export const HistoryPage = () => {
         setClearing(true);
         try {
             const token = localStorage.getItem('token');
-            await fetch('http://localhost:3000/api/interview/clear-history', {
+            await fetch(`${API_BASE_URL}/api/interview/clear-history`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { useParams, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -21,7 +22,7 @@ export const ReportPage = () => {
     const fetchReport = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`http://localhost:3000/api/interview/report/${sessionId}`, {
+            const res = await fetch(`${API_BASE_URL}/api/interview/report/${sessionId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -42,7 +43,7 @@ export const ReportPage = () => {
         setLoadingPlan(true);
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/interview/improvement-plan', {
+            const res = await fetch(`${API_BASE_URL}/api/interview/improvement-plan`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -143,7 +144,7 @@ export const ReportPage = () => {
                                 </div>
                                 <div className="text-center p-3 bg-white/5 rounded-lg">
                                     <div className={`text-2xl font-light ${emotionalAnalysis.emotionTrend === 'improving' ? 'text-green-400' :
-                                            emotionalAnalysis.emotionTrend === 'declining' ? 'text-red-400' : 'text-white/60'
+                                        emotionalAnalysis.emotionTrend === 'declining' ? 'text-red-400' : 'text-white/60'
                                         }`}>
                                         {emotionalAnalysis.emotionTrend === 'improving' ? '↑' :
                                             emotionalAnalysis.emotionTrend === 'declining' ? '↓' : '→'}
@@ -337,8 +338,8 @@ export const ReportPage = () => {
                                             {improvementPlan.actionItems.map((item: any, i: number) => (
                                                 <div key={i} className="flex items-center gap-3 p-2 bg-white/5 rounded">
                                                     <span className={`px-2 py-0.5 text-[10px] rounded ${item.priority === 'high' ? 'bg-red-500/20 text-red-400' :
-                                                            item.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
-                                                                'bg-green-500/20 text-green-400'
+                                                        item.priority === 'medium' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                            'bg-green-500/20 text-green-400'
                                                         }`}>
                                                         {item.priority}
                                                     </span>

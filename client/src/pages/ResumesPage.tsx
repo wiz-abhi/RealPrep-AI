@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -15,7 +16,7 @@ export const ResumesPage = () => {
     const fetchResumes = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/resume/list', {
+            const res = await fetch(`${API_BASE_URL}/api/resume/list`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -37,7 +38,7 @@ export const ResumesPage = () => {
 
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`http://localhost:3000/api/resume/${resumeId}`, {
+            const res = await fetch(`${API_BASE_URL}/api/resume/${resumeId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });

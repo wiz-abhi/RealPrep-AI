@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { GlassCard } from '../components/ui/GlassCard';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -14,7 +15,7 @@ export const DashboardPage = () => {
         const fetchSessions = async () => {
             try {
                 const token = localStorage.getItem('token');
-                const res = await fetch('http://localhost:3000/api/interview/history', {
+                const res = await fetch(`${API_BASE_URL}/api/interview/history`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();

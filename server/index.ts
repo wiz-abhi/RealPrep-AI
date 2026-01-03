@@ -6,11 +6,17 @@ import { Server } from 'socket.io';
 
 dotenv.config();
 
+// Get frontend origin from environment or use defaults
+const allowedOrigins = [
+    'http://localhost:5173',
+    process.env.FRONTEND_URL || ''
+].filter(Boolean);
+
 const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
     cors: {
-        origin: "http://localhost:5173",
+        origin: allowedOrigins,
         methods: ["GET", "POST"]
     }
 });
@@ -24,7 +30,10 @@ import { cleanupExpiredResumes } from './src/controllers/resume.controller';
 
 // ... (existing code)
 
-app.use(cors());
+app.use(cors({
+    origin: allowedOrigins,
+    credentials: true
+}));
 app.use(express.json({ limit: '10mb' }));
 
 // API Routes

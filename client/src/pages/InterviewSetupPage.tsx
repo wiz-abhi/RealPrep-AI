@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -39,7 +40,7 @@ export const InterviewSetupPage = () => {
                 const reader = new FileReader();
                 reader.onload = async (e) => {
                     const content = e.target?.result as string;
-                    await fetch('http://localhost:3000/api/reference/upload', {
+                    await fetch(`${API_BASE_URL}/api/reference/upload`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -55,7 +56,7 @@ export const InterviewSetupPage = () => {
                 reader.readAsText(referenceFile);
             }
 
-            const res = await fetch('http://localhost:3000/api/interview/start', {
+            const res = await fetch(`${API_BASE_URL}/api/interview/start`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

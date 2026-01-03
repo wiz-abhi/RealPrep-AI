@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -72,7 +73,7 @@ export const PreJoinPage = () => {
         // Update session duration before starting
         try {
             const token = localStorage.getItem('token');
-            await fetch(`http://localhost:3000/api/interview/session/${sessionId}/duration`, {
+            await fetch(`${API_BASE_URL}/api/interview/session/${sessionId}/duration`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ durationMinutes: duration })

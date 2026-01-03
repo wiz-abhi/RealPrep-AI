@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -94,7 +95,7 @@ export const SettingsPage = () => {
 
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/user/password', {
+            const res = await fetch(`${API_BASE_URL}/api/user/password`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -120,7 +121,7 @@ export const SettingsPage = () => {
     const handleSaveSettings = async () => {
         try {
             const token = localStorage.getItem('token');
-            await fetch('http://localhost:3000/api/user/settings', {
+            await fetch(`${API_BASE_URL}/api/user/settings`, {
                 method: 'PUT',
                 headers: {
                     'Content-Type': 'application/json',
@@ -140,7 +141,7 @@ export const SettingsPage = () => {
 
         try {
             const token = localStorage.getItem('token');
-            await fetch('http://localhost:3000/api/user/account', {
+            await fetch(`${API_BASE_URL}/api/user/account`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });

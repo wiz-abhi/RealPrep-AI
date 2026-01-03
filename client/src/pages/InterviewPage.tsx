@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Webcam from 'react-webcam';
@@ -74,7 +75,7 @@ export const InterviewPage = () => {
 
             try {
                 const token = localStorage.getItem('token');
-                const res = await fetch(`http://localhost:3000/api/interview/session/${sessionId}`, {
+                const res = await fetch(`${API_BASE_URL}/api/interview/session/${sessionId}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
 
@@ -168,7 +169,7 @@ export const InterviewPage = () => {
 
         try {
             const token = localStorage.getItem('token');
-            await fetch('http://localhost:3000/api/interview/end', {
+            await fetch(`${API_BASE_URL}/api/interview/end`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ sessionId })
@@ -207,7 +208,7 @@ export const InterviewPage = () => {
         try {
             const token = localStorage.getItem('token');
             const userGeminiKey = localStorage.getItem('user_gemini_api_key');
-            const res = await fetch('http://localhost:3000/api/interview/chat', {
+            const res = await fetch(`${API_BASE_URL}/api/interview/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -270,7 +271,7 @@ export const InterviewPage = () => {
         stopSpeaking(); // Ensure speech stops
         try {
             const token = localStorage.getItem('token');
-            await fetch('http://localhost:3000/api/interview/end', {
+            await fetch(`${API_BASE_URL}/api/interview/end`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ sessionId })
@@ -287,7 +288,7 @@ export const InterviewPage = () => {
         try {
             const token = localStorage.getItem('token');
             // End session without generating AI report (saves Gemini tokens)
-            await fetch('http://localhost:3000/api/interview/end-quick', {
+            await fetch(`${API_BASE_URL}/api/interview/end-quick`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                 body: JSON.stringify({ sessionId })

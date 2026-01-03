@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -18,13 +19,13 @@ export const ProfilePage = () => {
     const fetchProfileData = async () => {
         try {
             const token = localStorage.getItem('token');
-            const resumesRes = await fetch('http://localhost:3000/api/resume/list', {
+            const resumesRes = await fetch(`${API_BASE_URL}/api/resume/list`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const resumesData = await resumesRes.json();
             setResumes(resumesData.data || []);
 
-            const statsRes = await fetch('http://localhost:3000/api/user/stats', {
+            const statsRes = await fetch(`${API_BASE_URL}/api/user/stats`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const statsData = await statsRes.json();
@@ -40,7 +41,7 @@ export const ProfilePage = () => {
         if (!confirm('Delete this resume?')) return;
         try {
             const token = localStorage.getItem('token');
-            await fetch(`http://localhost:3000/api/resume/${resumeId}`, {
+            await fetch(`${API_BASE_URL}/api/resume/${resumeId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
             });

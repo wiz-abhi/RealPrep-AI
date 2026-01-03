@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../config/api';
 import { GlassCard } from '../components/ui/GlassCard';
 import { ScannerOverlay } from '../components/ui/ScannerOverlay';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -44,7 +45,7 @@ export const ResumeAnalysisPage = () => {
             }
 
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:3000/api/resume/upload', {
+            const res = await fetch(`${API_BASE_URL}/api/resume/upload`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
