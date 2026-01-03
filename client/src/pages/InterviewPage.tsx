@@ -162,6 +162,10 @@ export const InterviewPage = () => {
     }, [remainingSeconds, startedAt, sessionLoading]);
 
     const handleAutoEnd = async () => {
+        // Stop any ongoing speech and recording when timer expires
+        stopSpeaking();
+        stopRecording();
+
         try {
             const token = localStorage.getItem('token');
             await fetch('http://localhost:3000/api/interview/end', {
@@ -230,22 +234,19 @@ export const InterviewPage = () => {
     // Track the last sent transcript to prevent duplicate sends
     const lastSentTranscript = useRef<string>('');
 
-    // Handle voice transcript when transcription completes
-    // With continuous recognition, transcript updates when speech is recognized
+    // Handle voice transcript when user stops recording
+    // With accumulation model, transcript only updates when stopListening is called
     useEffect(() => {
         console.log('Transcript effect:', { isRecording, transcript, voiceMode, lastSent: lastSentTranscript.current });
 
         // Send if we have a new transcript that's different from the last sent one
-        if (transcript && voiceMode && transcript !== lastSentTranscript.current) {
-            console.log('Sending transcribed message:', transcript);
+        // Transcript will only be set when user stops recording (accumulated result)
+        if (transcript && voiceMode && transcript !== lastSentTranscript.current && !isRecording) {
+            console.log('Sending complete transcribed message:', transcript);
             lastSentTranscript.current = transcript;
-
-            // Stop recording before sending (so we don't pick up AI speech)
-            stopRecording();
-
             handleSendMessage(transcript);
         }
-    }, [transcript, voiceMode, handleSendMessage, stopRecording]);
+    }, [transcript, voiceMode, handleSendMessage, isRecording]);
 
     const handleTextSubmit = (e: React.FormEvent) => {
         e.preventDefault();

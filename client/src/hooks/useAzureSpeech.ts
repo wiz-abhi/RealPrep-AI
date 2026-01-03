@@ -24,12 +24,19 @@ export const useAzureSpeech = () => {
     const synthesizerRef = useRef<sdk.SpeechSynthesizer | null>(null);
     const playerRef = useRef<sdk.SpeakerAudioDestination | null>(null);
 
+    // Accumulate all recognized segments
+    const accumulatedTranscriptRef = useRef<string>('');
+
+    // Auto-send timer - sends accumulated transcript after pause
+    const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
     // Start continuous listening with streaming recognition
     const startListening = useCallback(async () => {
         try {
             setError(null);
             setTranscript('');
             setInterimTranscript('');
+            accumulatedTranscriptRef.current = ''; // Reset accumulator
 
             const config = getAzureConfig();
             if (!config.key) {
@@ -42,27 +49,60 @@ export const useAzureSpeech = () => {
             const speechConfig = sdk.SpeechConfig.fromSubscription(config.key, config.region);
             speechConfig.speechRecognitionLanguage = 'en-US';
 
-            // Enable intermediate results for lower perceived latency
-            speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "1500");
+            // Increase silence timeout to allow for longer pauses
+            speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "2000");
 
             const audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
             const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
             recognizerRef.current = recognizer;
 
             // Handle real-time partial results (streaming)
-            recognizer.recognizing = (s, e) => {
+            recognizer.recognizing = (_, e) => {
                 if (e.result.reason === sdk.ResultReason.RecognizingSpeech) {
                     console.log('Partial:', e.result.text);
-                    setInterimTranscript(e.result.text);
+                    // Show current accumulated + partial for real-time feedback
+                    setInterimTranscript(accumulatedTranscriptRef.current + ' ' + e.result.text);
+
+                    // Clear auto-send timer while user is speaking
+                    if (autoSendTimerRef.current) {
+                        clearTimeout(autoSendTimerRef.current);
+                        autoSendTimerRef.current = null;
+                    }
                 }
             };
 
-            // Handle final result
-            recognizer.recognized = (s, e) => {
+            // Handle final result - ACCUMULATE and start auto-send timer
+            recognizer.recognized = (_, e) => {
                 if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
-                    console.log('Final:', e.result.text);
-                    setTranscript(e.result.text);
-                    setInterimTranscript('');
+                    console.log('Final segment:', e.result.text);
+                    // Accumulate all segments
+                    if (e.result.text.trim()) {
+                        accumulatedTranscriptRef.current =
+                            accumulatedTranscriptRef.current
+                                ? accumulatedTranscriptRef.current + ' ' + e.result.text
+                                : e.result.text;
+                    }
+                    setInterimTranscript(accumulatedTranscriptRef.current);
+
+                    // Start auto-send timer - if no more speech for 3 seconds, send the transcript
+                    if (autoSendTimerRef.current) {
+                        clearTimeout(autoSendTimerRef.current);
+                    }
+                    autoSendTimerRef.current = setTimeout(() => {
+                        if (accumulatedTranscriptRef.current.trim()) {
+                            console.log('Auto-sending after pause:', accumulatedTranscriptRef.current);
+                            setTranscript(accumulatedTranscriptRef.current.trim());
+                            setInterimTranscript('');
+                            // Stop recognition after auto-send
+                            if (recognizerRef.current) {
+                                recognizerRef.current.stopContinuousRecognitionAsync(() => {
+                                    recognizerRef.current?.close();
+                                    recognizerRef.current = null;
+                                    setIsRecording(false);
+                                }, () => { });
+                            }
+                        }
+                    }, 3000); // 3 second pause triggers auto-send
                 } else if (e.result.reason === sdk.ResultReason.NoMatch) {
                     console.log('No speech recognized');
                 }
@@ -105,7 +145,7 @@ export const useAzureSpeech = () => {
         }
     }, []);
 
-    // Stop listening
+    // Stop listening - set final accumulated transcript
     const stopListening = useCallback(async () => {
         if (recognizerRef.current) {
             console.log('Stopping continuous recognition...');
@@ -117,6 +157,14 @@ export const useAzureSpeech = () => {
                         console.log('Recognition stopped');
                         recognizerRef.current?.close();
                         recognizerRef.current = null;
+
+                        // Set the final accumulated transcript
+                        if (accumulatedTranscriptRef.current.trim()) {
+                            console.log('Final accumulated transcript:', accumulatedTranscriptRef.current);
+                            setTranscript(accumulatedTranscriptRef.current.trim());
+                        }
+                        setInterimTranscript('');
+
                         setIsRecording(false);
                         setIsProcessing(false);
                         resolve();
