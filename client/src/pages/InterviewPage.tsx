@@ -38,7 +38,7 @@ export const InterviewPage = () => {
         interimTranscript: _interimTranscript,
         isRecording,
         isProcessing: _isProcessing,
-        isSpeaking: _isSpeaking,
+        isSpeaking,
         error: audioError,
         startRecording,
         stopRecording,
@@ -52,7 +52,7 @@ export const InterviewPage = () => {
         disconnect: disconnectVision,
         sendFrame,
         emotions,
-        isConnected: isVisionConnected
+        isConnected: _isVisionConnected
     } = useHumeVision();
 
     const webcamRef = useRef<Webcam>(null);
@@ -166,6 +166,9 @@ export const InterviewPage = () => {
         // Stop any ongoing speech and recording when timer expires
         stopSpeaking();
         stopRecording();
+
+        // Small delay to ensure audio is fully stopped before navigation
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         try {
             const token = localStorage.getItem('token');
@@ -315,12 +318,13 @@ export const InterviewPage = () => {
         startRecording();
     };
 
-    // Cleanup on component unmount (tab close, navigation)
+    // Cleanup on unmount - stop all audio/recording when leaving page
     useEffect(() => {
         return () => {
             stopSpeaking();
+            stopRecording();
         };
-    }, [stopSpeaking]);
+    }, [stopSpeaking, stopRecording]);
 
     // Render messages list
     const renderMessages = () => (
@@ -426,18 +430,37 @@ export const InterviewPage = () => {
             {/* Header with status indicators */}
             <header className="h-12 shrink-0 flex items-center justify-between px-6 border-b border-white/5 bg-black/50">
                 <div className="flex items-center gap-4">
-                    <h2 className="text-sm font-light text-white/70">
-                        Technical Interview
-                        <span className="ml-2 px-2 py-0.5 text-[10px] bg-white/5 text-white/40 rounded">
-                            {sessionId?.slice(0, 8)}
-                        </span>
-                    </h2>
                     <span className="text-[10px] text-white/30">
-                        {isVisionConnected ? '● Vision' : '○ Connecting'}
+                        Session: {sessionId?.slice(0, 8)}
                     </span>
                     <span className={`text-[10px] px-2 py-0.5 rounded ${voiceMode ? 'bg-white/10 text-white/60' : 'bg-white/5 text-white/40'}`}>
                         {voiceMode ? '🎤 Voice' : '⌨️ Text'}
                     </span>
+
+                    {/* Visual Status Indicator */}
+                    <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/50 border border-white/10">
+                        {isLoading ? (
+                            <span className="flex items-center gap-2 text-xs text-yellow-400">
+                                <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                                Processing...
+                            </span>
+                        ) : isSpeaking ? (
+                            <span className="flex items-center gap-2 text-xs text-blue-400">
+                                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+                                AI Speaking...
+                            </span>
+                        ) : isRecording ? (
+                            <span className="flex items-center gap-2 text-xs text-green-400">
+                                <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                                Listening...
+                            </span>
+                        ) : (
+                            <span className="flex items-center gap-2 text-xs text-white/40">
+                                <span className="w-2 h-2 rounded-full bg-white/30" />
+                                Ready
+                            </span>
+                        )}
+                    </div>
                 </div>
                 <button onClick={handleEndInterviewClick} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5 transition-colors">
                     End Interview
@@ -474,11 +497,14 @@ export const InterviewPage = () => {
                         </button>
                     </div>
                 </div>
-            )}
+            )
+            }
 
-            {audioError && (
-                <div className="px-6 py-2 bg-white/5 text-xs text-white/50 border-b border-white/5">⚠ {audioError}</div>
-            )}
+            {
+                audioError && (
+                    <div className="px-6 py-2 bg-white/5 text-xs text-white/50 border-b border-white/5">⚠ {audioError}</div>
+                )
+            }
 
             {/* Main Area */}
             <div className="flex-1 flex overflow-hidden pt-2">
@@ -499,14 +525,15 @@ export const InterviewPage = () => {
                                 {/* AI Cam */}
                                 <div className="relative bg-gradient-to-b from-[#0a0a0a] to-black border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
                                     <div className="text-center">
-                                        <div className="w-16 h-16 mx-auto rounded-full overflow-hidden border border-white/10 mb-2 bg-zinc-900 flex items-center justify-center relative">
-                                            <div className="absolute inset-0 bg-blue-500/10 animate-pulse" />
+                                        <div className={`w-16 h-16 mx-auto rounded-full overflow-hidden border mb-2 bg-zinc-900 flex items-center justify-center relative transition-all ${isSpeaking ? 'border-emerald-500/50' : 'border-white/10'}`}>
+                                            <div className={`absolute inset-0 ${isSpeaking ? 'bg-emerald-500/20 animate-pulse' : 'bg-blue-500/10'}`} />
                                             <Bot size={32} className="text-white/80 relative z-10" />
                                         </div>
-                                        <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] border ${!isRecording ? 'bg-white/5 text-white/60 border-white/10' : 'text-white/30 border-white/5'}`}>
-                                            <span className={`w-1 h-1 rounded-full ${!isRecording ? 'bg-white animate-pulse' : 'bg-white/20'}`} />
-                                            {!isRecording ? 'Speaking' : 'Listening'}
+                                        <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[10px] border transition-all ${isSpeaking ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : isRecording ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'text-white/30 border-white/5'}`}>
+                                            <span className={`w-1 h-1 rounded-full ${isSpeaking ? 'bg-emerald-400 animate-pulse' : isRecording ? 'bg-blue-400 animate-pulse' : 'bg-white/20'}`} />
+                                            {isSpeaking ? 'Speaking' : isRecording ? 'Listening' : 'Ready'}
                                         </div>
+                                        <p className="text-[10px] text-white/40 mt-2">Technical Interview</p>
                                     </div>
                                 </div>
 
@@ -631,14 +658,15 @@ export const InterviewPage = () => {
                                 {/* AI Cam */}
                                 <div className="flex-1 relative bg-gradient-to-b from-[#0a0a0a] to-black border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
                                     <div className="text-center">
-                                        <div className="w-24 h-24 mx-auto rounded-full overflow-hidden border border-white/10 mb-4 bg-zinc-900 flex items-center justify-center relative">
-                                            <div className="absolute inset-0 bg-blue-500/20 animate-pulse" />
+                                        <div className={`w-24 h-24 mx-auto rounded-full overflow-hidden border mb-4 bg-zinc-900 flex items-center justify-center relative transition-all ${isSpeaking ? 'border-emerald-500/50 shadow-lg shadow-emerald-500/20' : 'border-white/10'}`}>
+                                            <div className={`absolute inset-0 ${isSpeaking ? 'bg-emerald-500/20 animate-pulse' : 'bg-blue-500/10'}`} />
                                             <Bot size={48} className="text-white/80 relative z-10" />
                                         </div>
-                                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border ${!isRecording ? 'bg-white/5 text-white/60 border-white/10' : 'text-white/30 border-white/5'}`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${!isRecording ? 'bg-white animate-pulse' : 'bg-white/20'}`} />
-                                            {!isRecording ? 'Speaking...' : 'Listening'}
+                                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border transition-all ${isSpeaking ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : isRecording ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'text-white/30 border-white/5'}`}>
+                                            <span className={`w-1.5 h-1.5 rounded-full ${isSpeaking ? 'bg-emerald-400 animate-pulse' : isRecording ? 'bg-blue-400 animate-pulse' : 'bg-white/20'}`} />
+                                            {isSpeaking ? 'AI Speaking...' : isRecording ? 'Listening...' : 'Ready'}
                                         </div>
+                                        <p className="text-xs text-white/40 mt-3">Technical Interview</p>
                                     </div>
                                     <div className="absolute bottom-3 left-3 bg-black/70 px-2 py-1 rounded text-xs text-white/60">AI Interviewer</div>
                                 </div>
@@ -703,6 +731,6 @@ export const InterviewPage = () => {
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 };
