@@ -84,7 +84,7 @@ export const useAzureSpeech = () => {
                     }
                     setInterimTranscript(accumulatedTranscriptRef.current);
 
-                    // Start auto-send timer - if no more speech for 3 seconds, send the transcript
+                    // Start auto-send timer - if no more speech for 1.5 seconds, send the transcript
                     if (autoSendTimerRef.current) {
                         clearTimeout(autoSendTimerRef.current);
                     }
@@ -102,7 +102,7 @@ export const useAzureSpeech = () => {
                                 }, () => { });
                             }
                         }
-                    }, 3000); // 3 second pause triggers auto-send
+                    }, 1500); // 1.5 second pause triggers auto-send (reduced from 3s)
                 } else if (e.result.reason === sdk.ResultReason.NoMatch) {
                     console.log('No speech recognized');
                 }
@@ -238,7 +238,22 @@ export const useAzureSpeech = () => {
                 text,
                 (result) => {
                     if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
-                        console.log('TTS synthesis completed');
+                        console.log('TTS synthesis completed, audio duration:', result.audioDuration);
+                        // Estimate playback time based on audio duration
+                        // audioDuration is in 100-nanosecond units
+                        const durationMs = result.audioDuration ? Number(result.audioDuration) / 10000 : 0;
+
+                        // Set timeout to ensure isSpeaking resets after playback
+                        // Add small buffer to ensure audio has finished
+                        setTimeout(() => {
+                            console.log('TTS playback estimated complete, resetting isSpeaking');
+                            setIsSpeaking(false);
+                            // Clean up synthesizer
+                            if (synthesizerRef.current) {
+                                synthesizerRef.current.close();
+                                synthesizerRef.current = null;
+                            }
+                        }, Math.max(durationMs + 500, 1000)); // At least 1 second, or duration + 500ms buffer
                     } else if (result.reason === sdk.ResultReason.Canceled) {
                         const cancellation = sdk.CancellationDetails.fromResult(result);
                         console.error('TTS canceled:', cancellation.reason, cancellation.errorDetails);

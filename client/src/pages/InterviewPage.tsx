@@ -15,6 +15,7 @@ export const InterviewPage = () => {
     const [showChat, setShowChat] = useState(false);
     const [showEditor, setShowEditor] = useState(false);
     const [voiceMode, setVoiceMode] = useState(true);
+    const [handsFreeMode, setHandsFreeMode] = useState(true); // Auto-listen after AI speaks
     const [hasPlayedInitial, setHasPlayedInitial] = useState(false);
     const [textInput, setTextInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -247,6 +248,22 @@ export const InterviewPage = () => {
             handleSendMessage(transcript);
         }
     }, [transcript, voiceMode, handleSendMessage, isRecording]);
+
+    // Auto-resume listening after AI finishes speaking (hands-free mode)
+    const wasSpeakingRef = useRef(false);
+    useEffect(() => {
+        // Detect when AI stops speaking
+        if (wasSpeakingRef.current && !isSpeaking && handsFreeMode && voiceMode && !isLoading) {
+            console.log('AI finished speaking, auto-resuming recording...');
+            // Small delay to prevent picking up echo
+            setTimeout(() => {
+                if (!isRecording) {
+                    startRecording();
+                }
+            }, 500);
+        }
+        wasSpeakingRef.current = isSpeaking;
+    }, [isSpeaking, handsFreeMode, voiceMode, isLoading, isRecording, startRecording]);
 
     const handleTextSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -676,6 +693,28 @@ export const InterviewPage = () => {
                                 >
                                     <Square size={16} />
                                 </button>
+
+                                {/* Status indicator */}
+                                <div className="ml-2 flex items-center gap-2 px-3 py-1 rounded-full text-xs">
+                                    {isRecording && (
+                                        <span className="flex items-center gap-1.5 text-green-400">
+                                            <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                                            Listening...
+                                        </span>
+                                    )}
+                                    {isSpeaking && (
+                                        <span className="flex items-center gap-1.5 text-blue-400">
+                                            <span className="w-2 h-2 bg-blue-400 rounded-full animate-pulse" />
+                                            AI Speaking...
+                                        </span>
+                                    )}
+                                    {isLoading && !isSpeaking && (
+                                        <span className="flex items-center gap-1.5 text-yellow-400">
+                                            <span className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse" />
+                                            Processing...
+                                        </span>
+                                    )}
+                                </div>
                             </>
                         ) : (
                             <div className="flex items-center gap-2 text-xs text-white/40">
@@ -685,6 +724,16 @@ export const InterviewPage = () => {
                         )}
 
                         <div className="w-px h-8 bg-white/10 mx-2" />
+
+                        {/* Hands-free toggle */}
+                        {voiceMode && (
+                            <button
+                                onClick={() => setHandsFreeMode(!handsFreeMode)}
+                                className={`px-3 py-1.5 text-xs border rounded-full transition-all ${handsFreeMode ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'text-white/40 border-white/10 hover:bg-white/10'}`}
+                            >
+                                {handsFreeMode ? '🎙️ Hands-free ON' : '🎙️ Hands-free'}
+                            </button>
+                        )}
 
                         <button
                             onClick={toggleVoiceMode}
