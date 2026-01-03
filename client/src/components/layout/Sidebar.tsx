@@ -21,9 +21,6 @@ const Sidebar = () => {
                 <div className="w-8 h-8 rounded border border-white/20 flex items-center justify-center">
                     <span className="text-xs font-bold">R</span>
                 </div>
-                <span className="hidden lg:block ml-3 text-sm font-light tracking-[0.12em] text-white/80">
-                    REALPREP
-                </span>
             </div>
 
             {/* Nav */}

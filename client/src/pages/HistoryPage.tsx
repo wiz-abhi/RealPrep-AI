@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
+import { PageLoader } from '../components/ui/Loader';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
@@ -59,7 +60,7 @@ export const HistoryPage = () => {
             <div className="flex min-h-screen bg-black">
                 <Sidebar />
                 <main className="flex-1 ml-16 lg:ml-56 p-8 pt-24 flex items-center justify-center">
-                    <div className="text-white/30">Loading history...</div>
+                    <PageLoader text="Loading history..." />
                 </main>
             </div>
         );

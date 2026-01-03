@@ -8,10 +8,10 @@ import { Clock } from 'lucide-react';
 export const PreJoinPage = () => {
     const location = useLocation();
     const navigate = useNavigate();
-    const { sessionId, agentArgs } = location.state || {};
+    const { sessionId, agentArgs, durationMinutes: initialDuration } = location.state || {};
 
-    // Duration can be overridden here
-    const [duration, setDuration] = useState(15);
+    // Use duration from setup page, or default to 15
+    const [duration, setDuration] = useState(initialDuration || 15);
     const durationOptions = [5, 10, 15, 30];
 
     const [checks, setChecks] = useState([

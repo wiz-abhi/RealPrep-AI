@@ -76,7 +76,8 @@ export const InterviewSetupPage = () => {
                 navigate('/pre-join', {
                     state: {
                         sessionId: data.data.sessionId,
-                        agentArgs: data.data.agentArgs
+                        agentArgs: data.data.agentArgs,
+                        durationMinutes: durationMinutes
                     }
                 });
             } else {
