@@ -40,9 +40,9 @@ export const getStats = async (req: Request, res: Response) => {
         });
 
         const totalInterviews = sessions.length;
-        const completedSessions = sessions.filter(s => s.status === 'completed');
+        const completedSessions = sessions.filter((s: { status: string }) => s.status === 'completed');
         const averageScore = completedSessions.length > 0
-            ? Math.round(completedSessions.reduce((sum, s) => sum + (s.score || 0), 0) / completedSessions.length)
+            ? Math.round(completedSessions.reduce((sum: number, s: { score: number | null }) => sum + (s.score || 0), 0) / completedSessions.length)
             : 0;
 
         // Get top skills from resumes
@@ -51,8 +51,8 @@ export const getStats = async (req: Request, res: Response) => {
             select: { skills: true }
         });
 
-        const allSkills = resumes.flatMap(r => r.skills);
-        const skillCounts = allSkills.reduce((acc: any, skill) => {
+        const allSkills = resumes.flatMap((r: { skills: string[] }) => r.skills);
+        const skillCounts = allSkills.reduce((acc: Record<string, number>, skill: string) => {
             acc[skill] = (acc[skill] || 0) + 1;
             return acc;
         }, {});

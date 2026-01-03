@@ -185,7 +185,7 @@ export const getSession = async (req: Request, res: Response) => {
                 type: session.type,
                 startedAt: feedback?.startedAt || session.createdAt.toISOString(),
                 durationMinutes: feedback?.durationMinutes || 30,
-                transcript: session.transcript.map(t => ({
+                transcript: session.transcript.map((t: { sender: string; text: string; timestamp: Date }) => ({
                     sender: t.sender,
                     text: t.text,
                     timestamp: t.timestamp
@@ -285,7 +285,7 @@ export const chat = async (req: Request, res: Response) => {
         });
 
         // Build conversation for Gemini (excluding the just-added user message since we'll send it separately)
-        let conversation = history.slice(0, -1).map(t => ({
+        let conversation = history.slice(0, -1).map((t: { sender: string; text: string }) => ({
             role: t.sender === 'user' ? 'user' : 'model',
             parts: t.text
         }));
@@ -409,7 +409,7 @@ export const endSession = async (req: Request, res: Response) => {
         }
 
         // Generate evaluation
-        const conversationText = transcripts.map(t =>
+        const conversationText = transcripts.map((t: { sender: string; text: string }) =>
             `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
         ).join('\n\n');
 
@@ -520,7 +520,7 @@ export const generateImprovementPlan = async (req: Request, res: Response) => {
         const emotionHistory = feedback?.emotionHistory || [];
 
         // Build context for improvement plan
-        const conversationText = transcripts.map(t =>
+        const conversationText = transcripts.map((t: { sender: string; text: string }) =>
             `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
         ).join('\n\n');
 
@@ -662,7 +662,7 @@ export const clearHistory = async (req: Request, res: Response) => {
             select: { id: true }
         });
 
-        const sessionIds = sessions.map(s => s.id);
+        const sessionIds = sessions.map((s: { id: string }) => s.id);
 
         await prisma.transcript.deleteMany({
             where: { sessionId: { in: sessionIds } }

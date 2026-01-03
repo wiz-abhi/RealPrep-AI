@@ -69,7 +69,7 @@ export class GeminiService {
             })),
         });
 
-        const result = await this.retryOperation(() => chat.sendMessage(input));
+        const result = await this.retryOperation(() => chat.sendMessage(input)) as { response: { text: () => string } };
         const response = await result.response;
         return response.text();
     }
@@ -95,21 +95,21 @@ IMPORTANT INSTRUCTIONS:
 Example structure (adapt to your persona):
 "Hi [Name]! I'm [Your Name], and I'll be your interviewer today. Before we dive in, I'd love to hear a bit about you. Could you introduce yourself and tell me about your areas of expertise and anything you think would be helpful for me to know?"`;
 
-        const result = await this.retryOperation(() => model.generateContent(prompt));
+        const result = await this.retryOperation(() => model.generateContent(prompt)) as { response: { text: () => string } };
         return result.response.text();
     }
 
     async analyzeResume(resumeText: string) {
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
         const prompt = `Analyze this resume and extract key skills, strengths, and weaknesses as JSON: ${resumeText}`;
-        const result = await this.retryOperation(() => model.generateContent(prompt));
+        const result = await this.retryOperation(() => model.generateContent(prompt)) as { response: { text: () => string } };
         const text = result.response.text();
         return text.replace(/```json|```/g, '');
     }
 
     async generateEmbedding(text: string): Promise<number[]> {
         const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
-        const result = await this.retryOperation(() => model.embedContent(text));
+        const result = await this.retryOperation(() => model.embedContent(text)) as { embedding: { values: number[] } };
         return result.embedding.values;
     }
 
