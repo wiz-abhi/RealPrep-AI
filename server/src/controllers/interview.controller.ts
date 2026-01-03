@@ -61,7 +61,7 @@ export const startSession = async (req: Request, res: Response) => {
         const user = await retryDbOperation(() => prisma.user.findUnique({
             where: { id: userId },
             select: { name: true }
-        }));
+        })) as { name: string | null } | null;
         const userName = user?.name || 'there';
 
         // Retrieve relevant context from RAG
@@ -69,7 +69,7 @@ export const startSession = async (req: Request, res: Response) => {
         const ragContext = await RAGService.retrieveContext(resumeId, query, 5);
 
         // Extract skills from RAG context if not already present
-        let skills = resume.skills;
+        let skills = resume.skills as string[];
         if (!skills || skills.length === 0) {
             try {
                 const skillExtractionPrompt = `Based on this resume content, extract key technical skills as a JSON array:
@@ -131,7 +131,7 @@ Focus: ${instructionPrompt || 'General technical interview'}
         // Store AI's initial greeting in transcript
         await retryDbOperation(() => prisma.transcript.create({
             data: {
-                sessionId: session.id,
+                sessionId: (session as { id: string }).id,
                 sender: 'ai',
                 text: initialMessage,
                 timestamp: new Date()
@@ -141,7 +141,7 @@ Focus: ${instructionPrompt || 'General technical interview'}
         res.json({
             success: true,
             data: {
-                sessionId: session.id,
+                sessionId: (session as { id: string }).id,
                 initialMessage, // AI speaks first!
                 agentArgs: {
                     initialMessage,

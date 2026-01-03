@@ -35,12 +35,12 @@ app.use('/api/user', userRoutes);
 app.use('/api/reference', referenceRoutes);
 
 // Basic Health Check
-app.get('/health', (req, res) => {
+app.get('/health', (req: express.Request, res: express.Response) => {
     res.json({ status: 'ok', timestamp: new Date() });
 });
 
 // Socket.io Connection
-io.on('connection', (socket) => {
+io.on('connection', (socket: import('socket.io').Socket) => {
     console.log('Client connected:', socket.id);
 
     socket.on('disconnect', () => {
