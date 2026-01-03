@@ -15,7 +15,7 @@ export const InterviewPage = () => {
     const [showChat, setShowChat] = useState(false);
     const [showEditor, setShowEditor] = useState(false);
     const [voiceMode, setVoiceMode] = useState(true);
-    const [hasPlayedInitial, setHasPlayedInitial] = useState(false);
+    const [_hasPlayedInitial, setHasPlayedInitial] = useState(false);
     const [textInput, setTextInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [showEndModal, setShowEndModal] = useState(false);
@@ -25,7 +25,7 @@ export const InterviewPage = () => {
     // Timer state
     const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
     const [startedAt, setStartedAt] = useState<string>('');
-    const [durationMinutes, setDurationMinutes] = useState<number>(30);
+    const [_durationMinutes, setDurationMinutes] = useState<number>(30);
 
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -34,16 +34,16 @@ export const InterviewPage = () => {
 
     const {
         transcript,
-        interimTranscript,
+        interimTranscript: _interimTranscript,
         isRecording,
-        isProcessing,
-        isSpeaking,
+        isProcessing: _isProcessing,
+        isSpeaking: _isSpeaking,
         error: audioError,
         startRecording,
         stopRecording,
         playResponse,
         stopSpeaking,
-        provider: speechProvider
+        provider: _speechProvider
     } = useSpeech();
 
     const {

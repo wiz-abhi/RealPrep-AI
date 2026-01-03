@@ -108,7 +108,7 @@ export const useAzureSpeech = () => {
                 }
             };
 
-            recognizer.canceled = (s, e) => {
+            recognizer.canceled = (_s, e) => {
                 if (e.reason === sdk.CancellationReason.Error) {
                     console.error('Recognition canceled:', e.errorDetails);
                     setError(e.errorDetails);
@@ -228,7 +228,7 @@ export const useAzureSpeech = () => {
             synthesizerRef.current = synthesizer;
 
             // Handle streaming events
-            synthesizer.synthesizing = (s, e) => {
+            synthesizer.synthesizing = (_s, e) => {
                 // Audio data is being streamed
                 console.log('TTS streaming chunk received:', e.result.audioData?.byteLength, 'bytes');
             };

@@ -5,7 +5,7 @@ interface CodeEditorProps {
     onCodeChange?: (code: string) => void;
 }
 
-export const CodeEditor: React.FC<CodeEditorProps> = ({ language = 'javascript', onCodeChange }) => {
+export const CodeEditor: React.FC<CodeEditorProps> = ({ language: _language = 'javascript', onCodeChange }) => {
     const [code, setCode] = useState('// Write your code here...');
 
     const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
