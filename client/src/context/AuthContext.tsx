@@ -67,7 +67,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setUser(null);
-        window.location.href = '/login';
+        // Reloading works better in Electron - clears state and ProtectedRoute handles redirect to login
+        window.location.reload();
     };
 
     return (

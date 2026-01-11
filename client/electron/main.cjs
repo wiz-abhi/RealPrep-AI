@@ -36,6 +36,21 @@ function createWindow() {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
     }
 
+    // Debug: Log when page finishes loading
+    mainWindow.webContents.on('did-finish-load', () => {
+        console.log('Page finished loading');
+    });
+
+    // Debug: Log any page errors
+    mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
+        console.error('Failed to load:', errorCode, errorDescription);
+    });
+
+    // Debug: Log console messages from the renderer
+    mainWindow.webContents.on('console-message', (event, level, message) => {
+        console.log('Renderer:', message);
+    });
+
     // Handle external links - open in default browser
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         require('electron').shell.openExternal(url);
