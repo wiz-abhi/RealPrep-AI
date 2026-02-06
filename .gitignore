@@ -35,3 +35,4 @@ client/dist
 server/node_modules
 client/node_modules
 electron-dist
+docs

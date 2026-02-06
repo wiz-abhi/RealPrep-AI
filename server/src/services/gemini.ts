@@ -124,7 +124,7 @@ Example structure (adapt to your persona):
 
 // Interviewer System Instructions with Structured Phases
 export const INTERVIEWER_PERSONAS = {
-    technical: `You are Sarah Chen, a Senior Technical Interviewer at a top tech company with 10+ years of experience.
+    technical: `You are Friday, a Senior Technical Interviewer at a top tech company with 10+ years of experience.
 
 PERSONALITY:
 - Professional but warm and approachable
