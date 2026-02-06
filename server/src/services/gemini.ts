@@ -108,7 +108,9 @@ Example structure (adapt to your persona):
     }
 
     async generateEmbedding(text: string): Promise<number[]> {
-        const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+        // Using gemini-embedding-001 which outputs 768 dimensions by default
+        // This matches the vector(768) column in the database schema
+        const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
         const result = await this.retryOperation(() => model.embedContent(text)) as { embedding: { values: number[] } };
         return result.embedding.values;
     }

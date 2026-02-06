@@ -38,7 +38,7 @@ model ResumeChunk {
   resumeId  String
   resume    Resume   @relation(fields: [resumeId], references: [id])
   content   String
-  embedding Unsupported("vector(768)") // Gemini Embedding Dimension
+  embedding Unsupported("vector(3072)") // Gemini Embedding Dimension
   createdAt DateTime @default(now())
 }
 
@@ -47,7 +47,7 @@ model ReferenceDoc {
   title     String
   content   String
   type      String   // 'SamplePaper', 'JobDescription'
-  embedding Unsupported("vector(768)")
+  embedding Unsupported("vector(3072)")
   createdAt DateTime @default(now())
 }
 
