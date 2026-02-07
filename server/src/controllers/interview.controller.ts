@@ -26,6 +26,47 @@ const retryDbOperation = async <T>(operation: () => Promise<T>, retries = 3, del
 const buildSystemInstruction = (persona: string, resumeContext: string, skills: string[], interviewType: string) => {
     const basePersona = INTERVIEWER_PERSONAS[interviewType as keyof typeof INTERVIEWER_PERSONAS] || INTERVIEWER_PERSONAS.technical;
 
+    // If user provided custom instructions, make them the PRIORITY
+    const hasCustomInstructions = persona && persona.trim().length > 0;
+
+    if (hasCustomInstructions) {
+        return `${basePersona}
+
+═══════════════════════════════════════════════════
+📌 INTERVIEW FOCUS DIRECTIVE
+═══════════════════════════════════════════════════
+
+The candidate wants to focus on: "${persona}"
+
+HOW TO APPLY THIS FOCUS:
+1. You CAN start with a brief intro ("Tell me about yourself") - this is normal interviewer behavior
+2. ALL technical questions must be anchored to the focus topic above
+3. If asking about their projects, focus ONLY on aspects related to "${persona}"
+   - Example: If focus is "AI/ML", ask about the AI/ML aspects of their projects
+   - Do NOT ask about unrelated project aspects (e.g., frontend, deployment) unless relevant
+4. Theoretical/conceptual questions should be about the focus topic
+5. Coding problems should relate to the focus topic when possible
+
+EXAMPLES:
+- Focus: "AI/ML questions" → Ask about transformers, RAG, embeddings, model training, etc.
+  → For projects: "How did you handle embeddings in BookWise?" (AI/ML aspect)
+  → NOT: "Tell me about your authentication flow" (unrelated)
+
+- Focus: "DSA and coding only" → Jump to coding problems quickly after brief intro
+
+- Focus: "System design" → Ask about architecture, scalability, trade-offs
+
+Keep the interview natural but stay anchored to their focus area.
+═══════════════════════════════════════════════════
+
+CANDIDATE CONTEXT:
+Skills: ${skills.join(', ')}
+
+Resume highlights (use to ask focus-related questions about their experience):
+${resumeContext}`;
+    }
+
+    // Default behavior when no custom instructions provided
     return `${basePersona}
 
 CANDIDATE CONTEXT:
@@ -35,7 +76,7 @@ Resume highlights:
 ${resumeContext}
 
 INTERVIEW FOCUS:
-${persona || 'Conduct a comprehensive technical interview covering their skills and experience.'}
+Conduct a comprehensive technical interview covering their skills and experience.
 
 Remember: You are conducting a real interview. Be conversational, ask follow-up questions, and adapt based on their responses.`;
 };
