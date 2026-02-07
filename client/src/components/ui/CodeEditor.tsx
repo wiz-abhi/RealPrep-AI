@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import Editor from 'react-simple-code-editor';
-// @ts-ignore
-import { highlight, languages } from 'prismjs';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-clike';
+import 'prismjs/components/prism-c';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-python';
 import 'prismjs/components/prism-java';
-import 'prismjs/components/prism-clike';
 import 'prismjs/components/prism-cpp';
 import 'prismjs/themes/prism-tomorrow.css';
 
@@ -53,9 +53,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     const getHighlighter = (code: string) => {
         const lang = LANGUAGE_MAP[language] || 'javascript';
         try {
-            return highlight(code, languages[lang] || languages.javascript, lang);
+            return Prism.highlight(code, Prism.languages[lang] || Prism.languages.javascript, lang);
         } catch {
-            return highlight(code, languages.javascript, 'javascript');
+            return Prism.highlight(code, Prism.languages.javascript, 'javascript');
         }
     };
 
