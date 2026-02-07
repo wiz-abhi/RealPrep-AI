@@ -93,7 +93,7 @@ IMPORTANT INSTRUCTIONS:
 5. Do NOT use any markdown formatting - this will be spoken aloud
 
 Example structure (adapt to your persona):
-"Hi [Name]! I'm [Your Name], and I'll be your interviewer today. Before we dive in, I'd love to hear a bit about you."`;
+"Hi [Name]! I'm [Your Name], and I'll be your interviewer today. Before we dive in, I'd love to hear a bit about you. Could you introduce yourself and tell me about your areas of expertise and anything you think would be helpful for me to know?"`;
 
         const result = await this.retryOperation(() => model.generateContent(prompt)) as { response: { text: () => string } };
         return result.response.text();
