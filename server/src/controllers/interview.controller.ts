@@ -334,6 +334,100 @@ export const chat = async (req: Request, res: Response) => {
     }
 };
 
+// Evaluate code submitted by user
+export const evaluateCode = async (req: Request, res: Response) => {
+    try {
+        const { sessionId, code, language } = req.body;
+        const userGeminiKey = req.headers['x-user-gemini-key'] as string | undefined;
+
+        if (!sessionId || !code) {
+            return res.status(400).json({ error: 'Missing sessionId or code' });
+        }
+
+        // Get session context
+        const session = await prisma.session.findUnique({
+            where: { id: sessionId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        // Get recent conversation to understand the problem context
+        const recentTranscripts = await prisma.transcript.findMany({
+            where: { sessionId },
+            orderBy: { timestamp: 'desc' },
+            take: 5
+        });
+
+        const recentContext = recentTranscripts
+            .reverse()
+            .map(t => `${t.sender === 'ai' ? 'Interviewer' : 'Candidate'}: ${t.text}`)
+            .join('\n');
+
+        // Store user's code submission
+        await prisma.transcript.create({
+            data: {
+                sessionId,
+                sender: 'user',
+                text: `[CODE SUBMISSION - ${language.toUpperCase()}]\n\`\`\`${language}\n${code}\n\`\`\``
+            }
+        });
+
+        // Build evaluation prompt
+        const evaluationPrompt = `You are evaluating code submitted by a candidate during a technical interview.
+
+RECENT CONVERSATION CONTEXT:
+${recentContext}
+
+SUBMITTED CODE (${language}):
+\`\`\`${language}
+${code}
+\`\`\`
+
+Provide a brief, conversational evaluation as an interviewer would. Include:
+1. Whether the solution is correct or has issues
+2. Time and space complexity (if applicable)
+3. Code quality observations
+4. One specific follow-up question or suggestion for improvement
+
+Keep your response concise (2-4 short paragraphs) and conversational, as if speaking in an interview.
+Do NOT use markdown headers or bullet points - speak naturally.`;
+
+        // Get AI evaluation
+        const feedback = session.feedback as any;
+        const systemInstruction = feedback?.systemInstruction || INTERVIEWER_PERSONAS.technical;
+
+        const evaluation = await gemini.generateInterviewResponse(
+            systemInstruction,
+            [],
+            evaluationPrompt,
+            userGeminiKey
+        );
+
+        // Store AI evaluation
+        await prisma.transcript.create({
+            data: {
+                sessionId,
+                sender: 'ai',
+                text: evaluation
+            }
+        });
+
+        res.json({
+            success: true,
+            data: {
+                evaluation,
+                codeReceived: true
+            }
+        });
+
+    } catch (error) {
+        console.error('Code evaluation error:', error);
+        res.status(500).json({ error: 'Failed to evaluate code' });
+    }
+};
+
 export const endSession = async (req: Request, res: Response) => {
     try {
         const { sessionId } = req.body;

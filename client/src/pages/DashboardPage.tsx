@@ -76,15 +76,27 @@ export const DashboardPage = () => {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <GlassCard hover>
                             <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Total Sessions</p>
-                            <p className="text-3xl font-light text-white">{totalSessions}</p>
+                            {loading ? (
+                                <div className="h-9 w-16 bg-white/10 rounded animate-pulse" />
+                            ) : (
+                                <p className="text-3xl font-light text-white">{totalSessions}</p>
+                            )}
                         </GlassCard>
                         <GlassCard hover>
                             <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Average Score</p>
-                            <p className="text-3xl font-light text-white">{avgScore}%</p>
+                            {loading ? (
+                                <div className="h-9 w-20 bg-white/10 rounded animate-pulse" />
+                            ) : (
+                                <p className="text-3xl font-light text-white">{avgScore}%</p>
+                            )}
                         </GlassCard>
                         <GlassCard hover>
                             <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Focus Area</p>
-                            <p className="text-xl font-light text-white/80">Technical</p>
+                            {loading ? (
+                                <div className="h-7 w-24 bg-white/10 rounded animate-pulse" />
+                            ) : (
+                                <p className="text-xl font-light text-white/80">Technical</p>
+                            )}
                         </GlassCard>
                     </div>
 

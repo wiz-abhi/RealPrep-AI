@@ -19,6 +19,7 @@ export const InterviewPage = () => {
     const [_hasPlayedInitial, setHasPlayedInitial] = useState(false);
     const [textInput, setTextInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isCodeSubmitting, setIsCodeSubmitting] = useState(false);
     const [showEndModal, setShowEndModal] = useState(false);
     const [sessionLoading, setSessionLoading] = useState(true);
     const [sessionError, setSessionError] = useState<string | null>(null);
@@ -262,6 +263,61 @@ export const InterviewPage = () => {
     const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         setTextInput(e.target.value);
     }, []);
+
+    // Handle code submission to AI for evaluation
+    const handleCodeSubmit = useCallback(async (code: string, language: string) => {
+        if (!code.trim() || isCodeSubmitting) return;
+        setIsCodeSubmitting(true);
+
+        try {
+            const token = localStorage.getItem('token');
+            const userGeminiKey = localStorage.getItem('user_gemini_api_key');
+            const res = await fetch(`${API_BASE_URL}/api/interview/code`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                    ...(userGeminiKey && { 'X-User-Gemini-Key': userGeminiKey })
+                },
+                body: JSON.stringify({ sessionId, code, language })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                // Add code submission message
+                setMessages(prev => [...prev, {
+                    sender: 'user',
+                    text: `[CODE SUBMISSION - ${language.toUpperCase()}]\n\`\`\`${language}\n${code}\n\`\`\``
+                }]);
+                // Add AI evaluation
+                setMessages(prev => [...prev, { sender: 'ai', text: data.data.evaluation }]);
+
+                // Play evaluation if in voice mode
+                if (voiceMode) {
+                    playResponse(data.data.evaluation);
+                }
+            }
+        } catch (error) {
+            console.error('Code submission error:', error);
+        } finally {
+            setIsCodeSubmitting(false);
+        }
+    }, [sessionId, voiceMode, playResponse, isCodeSubmitting]);
+
+    // Auto-detect coding questions and open editor
+    useEffect(() => {
+        if (messages.length === 0) return;
+        const lastMessage = messages[messages.length - 1];
+        if (lastMessage.sender === 'ai') {
+            const codingKeywords = ['write a function', 'implement', 'write code', 'code this', 'write the code', 'coding', 'algorithm', 'function that', 'method that', 'write a program'];
+            const lowerText = lastMessage.text.toLowerCase();
+            const isCodingQuestion = codingKeywords.some(kw => lowerText.includes(kw));
+            if (isCodingQuestion && !showEditor) {
+                setShowEditor(true);
+                setShowChat(true); // Show both for context
+            }
+        }
+    }, [messages, showEditor]);
 
     // Show confirmation modal when clicking End Interview
     const handleEndInterviewClick = () => {
@@ -556,7 +612,7 @@ export const InterviewPage = () => {
                                         <button onClick={() => setShowEditor(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
                                     </div>
                                     <div className="flex-1 overflow-hidden">
-                                        <CodeEditor onCodeChange={() => { }} language="javascript" />
+                                        <CodeEditor onSubmit={handleCodeSubmit} isSubmitting={isCodeSubmitting} />
                                     </div>
                                 </div>
                             </div>
@@ -607,7 +663,7 @@ export const InterviewPage = () => {
                                             <button onClick={() => setShowEditor(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
                                         </div>
                                         <div className="flex-1 overflow-hidden">
-                                            <CodeEditor onCodeChange={() => { }} language="javascript" />
+                                            <CodeEditor onSubmit={handleCodeSubmit} isSubmitting={isCodeSubmitting} />
                                         </div>
                                     </div>
                                 )}
