@@ -102,7 +102,7 @@ export const useAzureSpeech = () => {
                                 }, () => { });
                             }
                         }
-                    }, 3000); // 3 second pause triggers auto-send
+                    }, 1000); // Reduced to 1s for faster response
                 } else if (e.result.reason === sdk.ResultReason.NoMatch) {
                     console.log('No speech recognized');
                 }
@@ -213,6 +213,8 @@ export const useAzureSpeech = () => {
 
             const speechConfig = sdk.SpeechConfig.fromSubscription(config.key, config.region);
             speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural';
+            // Optimize output format for lower bandwidth/latency
+            speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3;
 
             // Create speaker output for streaming
             const player = new sdk.SpeakerAudioDestination();

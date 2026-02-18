@@ -5,7 +5,7 @@ import prisma from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import { fetchAccessToken } from 'hume';
 
-const gemini = new GeminiService('gemini-3-flash-preview');
+const gemini = new GeminiService('gemini-2.5-flash-lite');
 const reportGemini = new GeminiService('gemini-2.5-flash-lite');
 
 // Helper for DB retry
@@ -297,126 +297,134 @@ export const chat = async (req: Request, res: Response) => {
         // Store emotions in session feedback for later analysis
         if (emotions && emotions.length > 0) {
             const currentFeedback = (session.feedback as any) || {};
-            const emotionHistory = currentFeedback.emotionHistory || [];
-            emotionHistory.push({
-                timestamp: new Date().toISOString(),
-                emotions: emotions.slice(0, 5) // Store top 5 emotions
-            });
-            await prisma.session.update({
-                where: { id: sessionId },
+            // Update emotion history (Non-blocking)
+            if (emotions && emotions.length > 0) {
+                const currentFeedback = (session.feedback as any) || {};
+                const emotionHistory = currentFeedback.emotionHistory || [];
+                emotionHistory.push({
+                    timestamp: new Date().toISOString(),
+                    emotions: emotions.slice(0, 5) // Store top 5 emotions
+                });
+                // Don't await this - let it run in background
+                prisma.session.update({
+                    where: { id: sessionId },
+                    data: {
+                        feedback: { ...currentFeedback, emotionHistory }
+                    }
+                }).catch(err => console.error('Failed to update emotion history:', err));
+            }
+
+            // Store user message
+            await retryDbOperation(() => prisma.transcript.create({
                 data: {
-                    feedback: { ...currentFeedback, emotionHistory }
+                    sessionId,
+                    sender: 'user',
+                    text: message
+                }
+            }));
+
+            // Get conversation history (Limit to last 30 messages for performance)
+            const history = await prisma.transcript.findMany({
+                where: { sessionId },
+                orderBy: { timestamp: 'desc' }, // Get newest first
+                take: 30
+            });
+
+            // Reverse back to chronological order
+            history.reverse();
+
+            // Build conversation for Gemini (excluding the just-added user message since we'll send it separately)
+            let conversation = history.slice(0, -1).map((t: { sender: string; text: string }) => ({
+                role: t.sender === 'user' ? 'user' : 'model',
+                parts: t.text
+            }));
+
+            // Remove leading 'model' messages (Gemini requires first message to be 'user')
+            while (conversation.length > 0 && conversation[0].role === 'model') {
+                conversation.shift();
+            }
+
+            // Get system instruction from session feedback
+            const feedback = session.feedback as any;
+            const systemInstruction = feedback?.systemInstruction || INTERVIEWER_PERSONAS.technical;
+
+            // Add emotion context if available
+            let emotionContext = '';
+            if (emotions && emotions.length > 0) {
+                const topEmotions = emotions.slice(0, 3).map((e: any) => `${e.name}: ${Math.round(e.score * 100)}%`).join(', ');
+                emotionContext = `\n\n[Candidate's current emotional state: ${topEmotions}. Adapt your tone accordingly.]`;
+            }
+
+            // Get AI response with system instruction (use user's key if provided)
+            const aiResponse = await gemini.generateInterviewResponse(
+                systemInstruction + emotionContext,
+                conversation,
+                message,
+                userGeminiKey // Pass user's custom key if available
+            );
+
+            // Store AI response
+            await prisma.transcript.create({
+                data: {
+                    sessionId,
+                    sender: 'ai',
+                    text: aiResponse
                 }
             });
-        }
 
-        // Store user message
-        await retryDbOperation(() => prisma.transcript.create({
-            data: {
-                sessionId,
-                sender: 'user',
-                text: message
+            res.json({
+                success: true,
+                data: { response: aiResponse }
+            });
+
+        } catch (error) {
+            console.error('Chat error:', error);
+            res.status(500).json({ error: 'Failed to process message' });
+        }
+    };
+
+    // Evaluate code submitted by user
+    export const evaluateCode = async (req: Request, res: Response) => {
+        try {
+            const { sessionId, code, language } = req.body;
+            const userGeminiKey = req.headers['x-user-gemini-key'] as string | undefined;
+
+            if (!sessionId || !code) {
+                return res.status(400).json({ error: 'Missing sessionId or code' });
             }
-        }));
 
-        // Get conversation history
-        const history = await prisma.transcript.findMany({
-            where: { sessionId },
-            orderBy: { timestamp: 'asc' }
-        });
+            // Get session context
+            const session = await prisma.session.findUnique({
+                where: { id: sessionId }
+            });
 
-        // Build conversation for Gemini (excluding the just-added user message since we'll send it separately)
-        let conversation = history.slice(0, -1).map((t: { sender: string; text: string }) => ({
-            role: t.sender === 'user' ? 'user' : 'model',
-            parts: t.text
-        }));
-
-        // Remove leading 'model' messages (Gemini requires first message to be 'user')
-        while (conversation.length > 0 && conversation[0].role === 'model') {
-            conversation.shift();
-        }
-
-        // Get system instruction from session feedback
-        const feedback = session.feedback as any;
-        const systemInstruction = feedback?.systemInstruction || INTERVIEWER_PERSONAS.technical;
-
-        // Add emotion context if available
-        let emotionContext = '';
-        if (emotions && emotions.length > 0) {
-            const topEmotions = emotions.slice(0, 3).map((e: any) => `${e.name}: ${Math.round(e.score * 100)}%`).join(', ');
-            emotionContext = `\n\n[Candidate's current emotional state: ${topEmotions}. Adapt your tone accordingly.]`;
-        }
-
-        // Get AI response with system instruction (use user's key if provided)
-        const aiResponse = await gemini.generateInterviewResponse(
-            systemInstruction + emotionContext,
-            conversation,
-            message,
-            userGeminiKey // Pass user's custom key if available
-        );
-
-        // Store AI response
-        await prisma.transcript.create({
-            data: {
-                sessionId,
-                sender: 'ai',
-                text: aiResponse
+            if (!session) {
+                return res.status(404).json({ error: 'Session not found' });
             }
-        });
 
-        res.json({
-            success: true,
-            data: { response: aiResponse }
-        });
+            // Get recent conversation to understand the problem context
+            const recentTranscripts = await prisma.transcript.findMany({
+                where: { sessionId },
+                orderBy: { timestamp: 'desc' },
+                take: 5
+            });
 
-    } catch (error) {
-        console.error('Chat error:', error);
-        res.status(500).json({ error: 'Failed to process message' });
-    }
-};
+            const recentContext = recentTranscripts
+                .reverse()
+                .map(t => `${t.sender === 'ai' ? 'Interviewer' : 'Candidate'}: ${t.text}`)
+                .join('\n');
 
-// Evaluate code submitted by user
-export const evaluateCode = async (req: Request, res: Response) => {
-    try {
-        const { sessionId, code, language } = req.body;
-        const userGeminiKey = req.headers['x-user-gemini-key'] as string | undefined;
+            // Store user's code submission
+            await prisma.transcript.create({
+                data: {
+                    sessionId,
+                    sender: 'user',
+                    text: `[CODE SUBMISSION - ${language.toUpperCase()}]\n\`\`\`${language}\n${code}\n\`\`\``
+                }
+            });
 
-        if (!sessionId || !code) {
-            return res.status(400).json({ error: 'Missing sessionId or code' });
-        }
-
-        // Get session context
-        const session = await prisma.session.findUnique({
-            where: { id: sessionId }
-        });
-
-        if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
-        }
-
-        // Get recent conversation to understand the problem context
-        const recentTranscripts = await prisma.transcript.findMany({
-            where: { sessionId },
-            orderBy: { timestamp: 'desc' },
-            take: 5
-        });
-
-        const recentContext = recentTranscripts
-            .reverse()
-            .map(t => `${t.sender === 'ai' ? 'Interviewer' : 'Candidate'}: ${t.text}`)
-            .join('\n');
-
-        // Store user's code submission
-        await prisma.transcript.create({
-            data: {
-                sessionId,
-                sender: 'user',
-                text: `[CODE SUBMISSION - ${language.toUpperCase()}]\n\`\`\`${language}\n${code}\n\`\`\``
-            }
-        });
-
-        // Build evaluation prompt
-        const evaluationPrompt = `You are evaluating code submitted by a candidate during a technical interview.
+            // Build evaluation prompt
+            const evaluationPrompt = `You are evaluating code submitted by a candidate during a technical interview.
 
 RECENT CONVERSATION CONTEXT:
 ${recentContext}
@@ -435,124 +443,124 @@ Provide a brief, conversational evaluation as an interviewer would. Include:
 Keep your response concise (2-4 short paragraphs) and conversational, as if speaking in an interview.
 Do NOT use markdown headers or bullet points - speak naturally.`;
 
-        // Get AI evaluation
-        const feedback = session.feedback as any;
-        const systemInstruction = feedback?.systemInstruction || INTERVIEWER_PERSONAS.technical;
+            // Get AI evaluation
+            const feedback = session.feedback as any;
+            const systemInstruction = feedback?.systemInstruction || INTERVIEWER_PERSONAS.technical;
 
-        const evaluation = await gemini.generateInterviewResponse(
-            systemInstruction,
-            [],
-            evaluationPrompt,
-            userGeminiKey
-        );
+            const evaluation = await gemini.generateInterviewResponse(
+                systemInstruction,
+                [],
+                evaluationPrompt,
+                userGeminiKey
+            );
 
-        // Store AI evaluation
-        await prisma.transcript.create({
-            data: {
-                sessionId,
-                sender: 'ai',
-                text: evaluation
-            }
-        });
-
-        res.json({
-            success: true,
-            data: {
-                evaluation,
-                codeReceived: true
-            }
-        });
-
-    } catch (error) {
-        console.error('Code evaluation error:', error);
-        res.status(500).json({ error: 'Failed to evaluate code' });
-    }
-};
-
-export const endSession = async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.body;
-
-        // Get session to retrieve emotion history
-        const session = await prisma.session.findUnique({
-            where: { id: sessionId }
-        });
-
-        // Get all transcripts
-        const transcripts = await prisma.transcript.findMany({
-            where: { sessionId },
-            orderBy: { timestamp: 'asc' }
-        });
-
-        // Analyze emotion history
-        const sessionFeedback = (session?.feedback as any) || {};
-        const emotionHistory = sessionFeedback.emotionHistory || [];
-
-        // Calculate emotional analysis
-        let emotionalAnalysis = {
-            averageConfidence: 0,
-            averageNervousness: 0,
-            stressPoints: 0,
-            emotionTrend: 'stable' as string,
-            dominantEmotions: [] as string[]
-        };
-
-        if (emotionHistory.length > 0) {
-            const allEmotions: Record<string, number[]> = {};
-            emotionHistory.forEach((entry: any) => {
-                entry.emotions?.forEach((e: any) => {
-                    if (!allEmotions[e.name]) allEmotions[e.name] = [];
-                    allEmotions[e.name].push(e.score);
-                });
+            // Store AI evaluation
+            await prisma.transcript.create({
+                data: {
+                    sessionId,
+                    sender: 'ai',
+                    text: evaluation
+                }
             });
 
-            // Calculate averages
-            const avgScores: Record<string, number> = {};
-            Object.entries(allEmotions).forEach(([name, scores]) => {
-                avgScores[name] = scores.reduce((a, b) => a + b, 0) / scores.length;
+            res.json({
+                success: true,
+                data: {
+                    evaluation,
+                    codeReceived: true
+                }
             });
 
-            emotionalAnalysis.averageConfidence = Math.round((avgScores['Joy'] || 0) * 100);
-            emotionalAnalysis.averageNervousness = Math.round(((avgScores['Fear'] || 0) + (avgScores['Anxiety'] || 0)) * 50);
-            emotionalAnalysis.stressPoints = emotionHistory.filter((e: any) =>
-                e.emotions?.some((em: any) => (em.name === 'Fear' || em.name === 'Anxiety') && em.score > 0.3)
-            ).length;
-
-            // Get dominant emotions
-            const sortedEmotions = Object.entries(avgScores)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 3)
-                .map(([name, score]) => `${name} (${Math.round(score * 100)}%)`);
-            emotionalAnalysis.dominantEmotions = sortedEmotions;
-
-            // Determine trend
-            if (emotionHistory.length >= 3) {
-                const firstHalf = emotionHistory.slice(0, Math.floor(emotionHistory.length / 2));
-                const secondHalf = emotionHistory.slice(Math.floor(emotionHistory.length / 2));
-                const getAvgStress = (entries: any[]) => {
-                    let total = 0, count = 0;
-                    entries.forEach(e => e.emotions?.forEach((em: any) => {
-                        if (em.name === 'Fear' || em.name === 'Anxiety') { total += em.score; count++; }
-                    }));
-                    return count > 0 ? total / count : 0;
-                };
-                const firstStress = getAvgStress(firstHalf);
-                const secondStress = getAvgStress(secondHalf);
-                if (secondStress < firstStress - 0.1) emotionalAnalysis.emotionTrend = 'improving';
-                else if (secondStress > firstStress + 0.1) emotionalAnalysis.emotionTrend = 'declining';
-            }
+        } catch (error) {
+            console.error('Code evaluation error:', error);
+            res.status(500).json({ error: 'Failed to evaluate code' });
         }
+    };
 
-        // Generate evaluation
-        const conversationText = transcripts.map((t: { sender: string; text: string }) =>
-            `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
-        ).join('\n\n');
+    export const endSession = async (req: Request, res: Response) => {
+        try {
+            const { sessionId } = req.body;
 
-        const emotionSummary = emotionHistory.length > 0
-            ? `\n\nEMOTIONAL DATA:\n- Dominant emotions: ${emotionalAnalysis.dominantEmotions.join(', ')}\n- Stress points detected: ${emotionalAnalysis.stressPoints}\n- Overall trend: ${emotionalAnalysis.emotionTrend}`
-            : '';
+            // Get session to retrieve emotion history
+            const session = await prisma.session.findUnique({
+                where: { id: sessionId }
+            });
 
-        const evaluationPrompt = `Evaluate this interview transcript and provide a score from 0-100 and detailed feedback.
+            // Get all transcripts
+            const transcripts = await prisma.transcript.findMany({
+                where: { sessionId },
+                orderBy: { timestamp: 'asc' }
+            });
+
+            // Analyze emotion history
+            const sessionFeedback = (session?.feedback as any) || {};
+            const emotionHistory = sessionFeedback.emotionHistory || [];
+
+            // Calculate emotional analysis
+            let emotionalAnalysis = {
+                averageConfidence: 0,
+                averageNervousness: 0,
+                stressPoints: 0,
+                emotionTrend: 'stable' as string,
+                dominantEmotions: [] as string[]
+            };
+
+            if (emotionHistory.length > 0) {
+                const allEmotions: Record<string, number[]> = {};
+                emotionHistory.forEach((entry: any) => {
+                    entry.emotions?.forEach((e: any) => {
+                        if (!allEmotions[e.name]) allEmotions[e.name] = [];
+                        allEmotions[e.name].push(e.score);
+                    });
+                });
+
+                // Calculate averages
+                const avgScores: Record<string, number> = {};
+                Object.entries(allEmotions).forEach(([name, scores]) => {
+                    avgScores[name] = scores.reduce((a, b) => a + b, 0) / scores.length;
+                });
+
+                emotionalAnalysis.averageConfidence = Math.round((avgScores['Joy'] || 0) * 100);
+                emotionalAnalysis.averageNervousness = Math.round(((avgScores['Fear'] || 0) + (avgScores['Anxiety'] || 0)) * 50);
+                emotionalAnalysis.stressPoints = emotionHistory.filter((e: any) =>
+                    e.emotions?.some((em: any) => (em.name === 'Fear' || em.name === 'Anxiety') && em.score > 0.3)
+                ).length;
+
+                // Get dominant emotions
+                const sortedEmotions = Object.entries(avgScores)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 3)
+                    .map(([name, score]) => `${name} (${Math.round(score * 100)}%)`);
+                emotionalAnalysis.dominantEmotions = sortedEmotions;
+
+                // Determine trend
+                if (emotionHistory.length >= 3) {
+                    const firstHalf = emotionHistory.slice(0, Math.floor(emotionHistory.length / 2));
+                    const secondHalf = emotionHistory.slice(Math.floor(emotionHistory.length / 2));
+                    const getAvgStress = (entries: any[]) => {
+                        let total = 0, count = 0;
+                        entries.forEach(e => e.emotions?.forEach((em: any) => {
+                            if (em.name === 'Fear' || em.name === 'Anxiety') { total += em.score; count++; }
+                        }));
+                        return count > 0 ? total / count : 0;
+                    };
+                    const firstStress = getAvgStress(firstHalf);
+                    const secondStress = getAvgStress(secondHalf);
+                    if (secondStress < firstStress - 0.1) emotionalAnalysis.emotionTrend = 'improving';
+                    else if (secondStress > firstStress + 0.1) emotionalAnalysis.emotionTrend = 'declining';
+                }
+            }
+
+            // Generate evaluation
+            const conversationText = transcripts.map((t: { sender: string; text: string }) =>
+                `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
+            ).join('\n\n');
+
+            const emotionSummary = emotionHistory.length > 0
+                ? `\n\nEMOTIONAL DATA:\n- Dominant emotions: ${emotionalAnalysis.dominantEmotions.join(', ')}\n- Stress points detected: ${emotionalAnalysis.stressPoints}\n- Overall trend: ${emotionalAnalysis.emotionTrend}`
+                : '';
+
+            const evaluationPrompt = `Evaluate this interview transcript and provide a score from 0-100 and detailed feedback.
 
 TRANSCRIPT:
 ${conversationText}${emotionSummary}
@@ -568,98 +576,98 @@ Provide your response as JSON:
     "problemSolving": <number 0-100>
 }`;
 
-        const evaluationText = await reportGemini.generateText(evaluationPrompt);
-        let evaluation;
-        try {
-            evaluation = JSON.parse(evaluationText);
-        } catch {
-            evaluation = { score: 70, summary: 'Interview completed', strengths: [], improvements: [] };
-        }
-
-        // Add emotional analysis to evaluation
-        evaluation.emotionalAnalysis = emotionalAnalysis;
-
-        // Update session
-        await prisma.session.update({
-            where: { id: sessionId },
-            data: {
-                status: 'completed',
-                score: evaluation.score,
-                feedback: evaluation
+            const evaluationText = await reportGemini.generateText(evaluationPrompt);
+            let evaluation;
+            try {
+                evaluation = JSON.parse(evaluationText);
+            } catch {
+                evaluation = { score: 70, summary: 'Interview completed', strengths: [], improvements: [] };
             }
-        });
 
-        res.json({
-            success: true,
-            data: evaluation
-        });
+            // Add emotional analysis to evaluation
+            evaluation.emotionalAnalysis = emotionalAnalysis;
 
-    } catch (error) {
-        console.error('End session error:', error);
-        res.status(500).json({ error: 'Failed to end session' });
-    }
-};
-
-// End session without generating AI report (to save Gemini tokens)
-export const endSessionWithoutReport = async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.body;
-
-        // Just mark session as completed without AI evaluation
-        await prisma.session.update({
-            where: { id: sessionId },
-            data: {
-                status: 'completed',
-                score: 0,
-                feedback: {
-                    summary: 'Interview completed without AI evaluation',
-                    strengths: [],
-                    improvements: [],
-                    noReport: true
+            // Update session
+            await prisma.session.update({
+                where: { id: sessionId },
+                data: {
+                    status: 'completed',
+                    score: evaluation.score,
+                    feedback: evaluation
                 }
-            }
-        });
+            });
 
-        res.json({
-            success: true,
-            data: { message: 'Session closed without report' }
-        });
+            res.json({
+                success: true,
+                data: evaluation
+            });
 
-    } catch (error) {
-        console.error('End session error:', error);
-        res.status(500).json({ error: 'Failed to end session' });
-    }
-};
-
-// Generate detailed improvement plan based on interview performance and emotions
-export const generateImprovementPlan = async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.body;
-
-        // Get session with feedback and transcript
-        const session = await prisma.session.findUnique({
-            where: { id: sessionId }
-        });
-
-        if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
+        } catch (error) {
+            console.error('End session error:', error);
+            res.status(500).json({ error: 'Failed to end session' });
         }
+    };
 
-        const transcripts = await prisma.transcript.findMany({
-            where: { sessionId },
-            orderBy: { timestamp: 'asc' }
-        });
+    // End session without generating AI report (to save Gemini tokens)
+    export const endSessionWithoutReport = async (req: Request, res: Response) => {
+        try {
+            const { sessionId } = req.body;
 
-        const feedback = session.feedback as any;
-        const emotionalAnalysis = feedback?.emotionalAnalysis || {};
-        const emotionHistory = feedback?.emotionHistory || [];
+            // Just mark session as completed without AI evaluation
+            await prisma.session.update({
+                where: { id: sessionId },
+                data: {
+                    status: 'completed',
+                    score: 0,
+                    feedback: {
+                        summary: 'Interview completed without AI evaluation',
+                        strengths: [],
+                        improvements: [],
+                        noReport: true
+                    }
+                }
+            });
 
-        // Build context for improvement plan
-        const conversationText = transcripts.map((t: { sender: string; text: string }) =>
-            `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
-        ).join('\n\n');
+            res.json({
+                success: true,
+                data: { message: 'Session closed without report' }
+            });
 
-        const emotionalContext = emotionHistory.length > 0 ? `
+        } catch (error) {
+            console.error('End session error:', error);
+            res.status(500).json({ error: 'Failed to end session' });
+        }
+    };
+
+    // Generate detailed improvement plan based on interview performance and emotions
+    export const generateImprovementPlan = async (req: Request, res: Response) => {
+        try {
+            const { sessionId } = req.body;
+
+            // Get session with feedback and transcript
+            const session = await prisma.session.findUnique({
+                where: { id: sessionId }
+            });
+
+            if (!session) {
+                return res.status(404).json({ error: 'Session not found' });
+            }
+
+            const transcripts = await prisma.transcript.findMany({
+                where: { sessionId },
+                orderBy: { timestamp: 'asc' }
+            });
+
+            const feedback = session.feedback as any;
+            const emotionalAnalysis = feedback?.emotionalAnalysis || {};
+            const emotionHistory = feedback?.emotionHistory || [];
+
+            // Build context for improvement plan
+            const conversationText = transcripts.map((t: { sender: string; text: string }) =>
+                `${t.sender === 'user' ? 'Candidate' : 'Interviewer'}: ${t.text}`
+            ).join('\n\n');
+
+            const emotionalContext = emotionHistory.length > 0 ? `
 EMOTIONAL ANALYSIS:
 - Dominant Emotions: ${emotionalAnalysis.dominantEmotions?.join(', ') || 'Not available'}
 - Average Confidence: ${emotionalAnalysis.averageConfidence || 0}%
@@ -668,7 +676,7 @@ EMOTIONAL ANALYSIS:
 - Emotional Trend: ${emotionalAnalysis.emotionTrend || 'stable'}
 ` : '';
 
-        const performanceContext = `
+            const performanceContext = `
 PERFORMANCE SCORES:
 - Overall Score: ${session.score || 0}/100
 - Technical Accuracy: ${feedback?.technicalAccuracy || 'N/A'}
@@ -679,7 +687,7 @@ STRENGTHS: ${feedback?.strengths?.join(', ') || 'None identified'}
 AREAS FOR IMPROVEMENT: ${feedback?.improvements?.join(', ') || 'None identified'}
 `;
 
-        const improvementPrompt = `Based on this interview data, create a comprehensive and personalized improvement plan.
+            const improvementPrompt = `Based on this interview data, create a comprehensive and personalized improvement plan.
 
 INTERVIEW TRANSCRIPT:
 ${conversationText}
@@ -712,117 +720,117 @@ Create a detailed improvement plan in JSON format:
     "overallAdvice": "<personalized motivational advice based on their performance>"
 }`;
 
-        const planText = await reportGemini.generateText(improvementPrompt);
-        let improvementPlan;
+            const planText = await reportGemini.generateText(improvementPrompt);
+            let improvementPlan;
+            try {
+                improvementPlan = JSON.parse(planText);
+            } catch {
+                improvementPlan = {
+                    technicalPlan: { gaps: ['Unable to generate detailed analysis'], resources: [], practiceExercises: [], timeline: '2-4 weeks' },
+                    communicationPlan: { currentLevel: 'Needs review', improvements: [], techniques: [] },
+                    emotionalReadiness: { stressManagement: [], confidenceBuilding: [], interviewAnxiety: [] },
+                    actionItems: [],
+                    overallAdvice: 'Keep practicing and stay confident!'
+                };
+            }
+
+            res.json({
+                success: true,
+                data: improvementPlan
+            });
+
+        } catch (error) {
+            console.error('Generate improvement plan error:', error);
+            res.status(500).json({ error: 'Failed to generate improvement plan' });
+        }
+    };
+
+    export const getUserSessions = async (req: Request, res: Response) => {
         try {
-            improvementPlan = JSON.parse(planText);
-        } catch {
-            improvementPlan = {
-                technicalPlan: { gaps: ['Unable to generate detailed analysis'], resources: [], practiceExercises: [], timeline: '2-4 weeks' },
-                communicationPlan: { currentLevel: 'Needs review', improvements: [], techniques: [] },
-                emotionalReadiness: { stressManagement: [], confidenceBuilding: [], interviewAnxiety: [] },
-                actionItems: [],
-                overallAdvice: 'Keep practicing and stay confident!'
-            };
+            const userId = req.userId;
+
+            const sessions = await prisma.session.findMany({
+                where: { userId },
+                orderBy: { createdAt: 'desc' }
+            });
+
+            res.json({
+                success: true,
+                data: sessions
+            });
+        } catch (error) {
+            console.error('Get sessions error:', error);
+            res.status(500).json({ error: 'Failed to fetch sessions' });
         }
+    };
 
-        res.json({
-            success: true,
-            data: improvementPlan
-        });
+    export const getReport = async (req: Request, res: Response) => {
+        try {
+            const { sessionId } = req.params;
 
-    } catch (error) {
-        console.error('Generate improvement plan error:', error);
-        res.status(500).json({ error: 'Failed to generate improvement plan' });
-    }
-};
-
-export const getUserSessions = async (req: Request, res: Response) => {
-    try {
-        const userId = req.userId;
-
-        const sessions = await prisma.session.findMany({
-            where: { userId },
-            orderBy: { createdAt: 'desc' }
-        });
-
-        res.json({
-            success: true,
-            data: sessions
-        });
-    } catch (error) {
-        console.error('Get sessions error:', error);
-        res.status(500).json({ error: 'Failed to fetch sessions' });
-    }
-};
-
-export const getReport = async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.params;
-
-        const session = await prisma.session.findUnique({
-            where: { id: sessionId },
-            include: {
-                transcript: {
-                    orderBy: { timestamp: 'asc' }
+            const session = await prisma.session.findUnique({
+                where: { id: sessionId },
+                include: {
+                    transcript: {
+                        orderBy: { timestamp: 'asc' }
+                    }
                 }
-            }
-        });
+            });
 
-        if (!session) {
-            return res.status(404).json({ error: 'Session not found' });
+            if (!session) {
+                return res.status(404).json({ error: 'Session not found' });
+            }
+
+            res.json({
+                success: true,
+                data: {
+                    score: session.score,
+                    feedback: session.feedback,
+                    transcript: session.transcript,
+                    createdAt: session.createdAt
+                }
+            });
+        } catch (error) {
+            console.error('Get report error:', error);
+            res.status(500).json({ error: 'Failed to fetch report' });
         }
+    };
 
-        res.json({
-            success: true,
-            data: {
-                score: session.score,
-                feedback: session.feedback,
-                transcript: session.transcript,
-                createdAt: session.createdAt
-            }
-        });
-    } catch (error) {
-        console.error('Get report error:', error);
-        res.status(500).json({ error: 'Failed to fetch report' });
-    }
-};
+    export const clearHistory = async (req: Request, res: Response) => {
+        try {
+            const userId = req.userId;
 
-export const clearHistory = async (req: Request, res: Response) => {
-    try {
-        const userId = req.userId;
+            const sessions = await prisma.session.findMany({
+                where: { userId },
+                select: { id: true }
+            });
 
-        const sessions = await prisma.session.findMany({
-            where: { userId },
-            select: { id: true }
-        });
+            const sessionIds = sessions.map((s: { id: string }) => s.id);
 
-        const sessionIds = sessions.map((s: { id: string }) => s.id);
+            await prisma.transcript.deleteMany({
+                where: { sessionId: { in: sessionIds } }
+            });
 
-        await prisma.transcript.deleteMany({
-            where: { sessionId: { in: sessionIds } }
-        });
+            await prisma.session.deleteMany({
+                where: { userId }
+            });
 
-        await prisma.session.deleteMany({
-            where: { userId }
-        });
+            res.json({ success: true, message: 'History cleared' });
+        } catch (error) {
+            console.error('Clear history error:', error);
+            res.status(500).json({ error: 'Failed to clear history' });
+        }
+    };
 
-        res.json({ success: true, message: 'History cleared' });
-    } catch (error) {
-        console.error('Clear history error:', error);
-        res.status(500).json({ error: 'Failed to clear history' });
-    }
-};
-
-export const getAccessToken = async (req: Request, res: Response) => {
-    try {
-        const accessToken = await fetchAccessToken({
-            apiKey: process.env.HUME_API_KEY!,
-            secretKey: process.env.HUME_SECRET_KEY!
-        });
-        res.json({ accessToken });
-    } catch (error) {
-        console.error('Hume token error:', error);
-        res.status(500).json({ error: 'Failed to get Hume token' });
-    }
-};
+    export const getAccessToken = async (req: Request, res: Response) => {
+        try {
+            const accessToken = await fetchAccessToken({
+                apiKey: process.env.HUME_API_KEY!,
+                secretKey: process.env.HUME_SECRET_KEY!
+            });
+            res.json({ accessToken });
+        } catch (error) {
+            console.error('Hume token error:', error);
+            res.status(500).json({ error: 'Failed to get Hume token' });
+        }
+    };

@@ -219,7 +219,7 @@ export const useElevenLabs = () => {
         try {
             setIsSpeaking(true);
 
-            const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream`, {
+            const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}/stream?optimize_streaming_latency=4`, {
                 method: 'POST',
                 headers: {
                     'Accept': 'audio/mpeg',
