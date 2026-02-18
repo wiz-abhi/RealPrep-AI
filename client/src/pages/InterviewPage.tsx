@@ -217,7 +217,7 @@ export const InterviewPage = () => {
                     'Authorization': `Bearer ${token}`,
                     ...(userGeminiKey && { 'X-User-Gemini-Key': userGeminiKey })
                 },
-                body: JSON.stringify({ sessionId, message: text, emotions: emotions.slice(0, 3) })
+                body: JSON.stringify({ sessionId, message: text, emotions: emotions.slice(0, 5) })
             });
 
             const data = await res.json();
@@ -585,10 +585,16 @@ export const InterviewPage = () => {
                                 <Webcam ref={webcamRef} audio={false} className="w-full h-full object-cover" />
                                 <div className="absolute bottom-3 left-3 bg-black/70 px-2 py-1 rounded text-xs text-white/60">{(user as any)?.name || 'You'}</div>
                                 <div className="absolute top-3 right-3 flex flex-col gap-1.5 items-end">
-                                    {emotions.slice(0, 3).map((e: any, i) => (
-                                        <div key={i} className="bg-black/70 px-2.5 py-1 rounded text-[10px] flex items-center gap-2 border border-white/10">
-                                            <span className="text-white/60">{e.name}</span>
-                                            <div className="w-10 h-1 bg-white/10 rounded"><div className="h-full bg-white/60 rounded" style={{ width: `${e.score * 100}%` }} /></div>
+                                    {emotions.slice(0, 5).map((e: any, i: number) => (
+                                        <div key={i} className="bg-black/70 px-2.5 py-1 rounded text-[10px] flex items-center gap-2 border border-white/10 backdrop-blur-sm">
+                                            <span className="text-white/70 min-w-[72px] text-right">{e.name}</span>
+                                            <div className="w-12 h-1.5 bg-white/10 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full rounded-full transition-all duration-500"
+                                                    style={{ width: `${Math.max(e.score * 100, 2)}%`, backgroundColor: e.color || '#9ca3af' }}
+                                                />
+                                            </div>
+                                            <span className="text-white/40 w-7 text-right font-mono">{Math.round(e.score * 100)}%</span>
                                         </div>
                                     ))}
                                 </div>
