@@ -20,6 +20,7 @@ import { FeaturesPage } from './pages/FeaturesPage';
 import { PricingPage } from './pages/PricingPage';
 import { PreJoinPage } from './pages/PreJoinPage';
 import { AdminPage } from './pages/AdminPage';
+import { RechargePage } from './pages/RechargePage';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -62,6 +63,7 @@ const AppContent = () => {
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
+        <Route path="/recharge" element={<ProtectedRoute><RechargePage /></ProtectedRoute>} />
       </Routes>
     </AppLayout>
   );

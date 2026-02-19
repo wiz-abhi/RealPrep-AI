@@ -179,8 +179,8 @@ export const InterviewSetupPage = () => {
 
                         {/* Credit Info */}
                         <div className={`mt-4 p-3 rounded-lg border ${(user?.credits ?? 0) < durationMinutes
-                                ? 'bg-red-500/10 border-red-500/20'
-                                : 'bg-white/5 border-white/10'
+                            ? 'bg-red-500/10 border-red-500/20'
+                            : 'bg-white/5 border-white/10'
                             }`}>
                             <div className="flex items-center justify-between text-xs">
                                 <span className="text-white/50">Your credits</span>
@@ -194,7 +194,14 @@ export const InterviewSetupPage = () => {
                             </div>
                             {(user?.credits ?? 0) < durationMinutes && (
                                 <p className="text-[10px] text-red-400/80 mt-2">
-                                    Not enough credits. Choose a shorter duration or contact admin.
+                                    Not enough credits.{' '}
+                                    <button
+                                        onClick={() => navigate('/recharge')}
+                                        className="underline text-violet-400 hover:text-violet-300"
+                                    >
+                                        Add Credits
+                                    </button>{' '}
+                                    or choose a shorter duration.
                                 </p>
                             )}
                         </div>

@@ -11,6 +11,7 @@ export const DashboardPage = () => {
     const [sessions, setSessions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [showWelcome, setShowWelcome] = useState(false);
+    const [rechargeInfo, setRechargeInfo] = useState<{ credits: number; total: number } | null>(null);
 
     useEffect(() => {
         const fetchSessions = async () => {
@@ -48,6 +49,14 @@ export const DashboardPage = () => {
         if (localStorage.getItem('showWelcome') === 'true') {
             setShowWelcome(true);
             localStorage.removeItem('showWelcome');
+        }
+        // Check for recharge success (set after payment)
+        const rechargeRaw = localStorage.getItem('rechargeSuccess');
+        if (rechargeRaw) {
+            try {
+                setRechargeInfo(JSON.parse(rechargeRaw));
+            } catch { }
+            localStorage.removeItem('rechargeSuccess');
         }
     }, []);
 
@@ -88,12 +97,13 @@ export const DashboardPage = () => {
 
                     {/* Stats */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <GlassCard hover>
+                        <GlassCard hover className="cursor-pointer" onClick={() => navigate('/recharge')}>
                             <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Available Credits</p>
                             <div className="flex items-baseline gap-2">
                                 <p className={`text-3xl font-light ${(user?.credits ?? 0) > 20 ? 'text-emerald-400' : (user?.credits ?? 0) > 0 ? 'text-yellow-400' : 'text-red-400'}`}>{user?.credits ?? 0}</p>
                                 <span className="text-xs text-white/20">credits</span>
                             </div>
+                            <p className="text-[10px] text-violet-400/60 mt-2 group-hover:text-violet-400">+ Add Credits</p>
                         </GlassCard>
                         <GlassCard hover>
                             <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Total Sessions</p>
@@ -216,6 +226,32 @@ export const DashboardPage = () => {
                             className="btn-primary w-full text-sm"
                         >
                             Let's Go! 🚀
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Recharge Success Popup */}
+            {rechargeInfo && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+                    <div className="bg-zinc-900 border border-white/10 rounded-2xl p-8 max-w-sm mx-4 text-center shadow-2xl">
+                        <div className="text-5xl mb-4">🌟</div>
+                        <h2 className="text-xl font-semibold text-white mb-2">Credits Added!</h2>
+                        <p className="text-sm text-white/50 mb-4">
+                            Congratulations! Your recharge was successful.
+                        </p>
+                        <div className="inline-flex items-baseline gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-6 py-3 mb-2">
+                            <span className="text-4xl font-bold text-emerald-400">{rechargeInfo.credits}</span>
+                            <span className="text-sm text-emerald-400/70">credits added</span>
+                        </div>
+                        <p className="text-xs text-white/40 mb-6">
+                            Your total balance is now <span className="text-emerald-400 font-medium">{rechargeInfo.total}</span> credits.
+                        </p>
+                        <button
+                            onClick={() => setRechargeInfo(null)}
+                            className="btn-primary w-full text-sm"
+                        >
+                            Awesome! 🚀
                         </button>
                     </div>
                 </div>
