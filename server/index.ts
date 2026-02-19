@@ -26,6 +26,7 @@ import interviewRoutes from './src/routes/interview.routes';
 import referenceRoutes from './src/routes/reference.routes';
 import authRoutes from './src/routes/auth.routes';
 import userRoutes from './src/routes/user.routes';
+import adminRoutes from './src/routes/admin.routes';
 import { cleanupExpiredResumes } from './src/controllers/resume.controller';
 
 // ... (existing code)
@@ -41,6 +42,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/resume', resumeRoutes);
 app.use('/api/interview', interviewRoutes);
 app.use('/api/user', userRoutes);
+app.use('/api/admin', adminRoutes);
 app.use('/api/reference', referenceRoutes);
 
 // Basic Health Check

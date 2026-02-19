@@ -6,6 +6,8 @@ interface User {
     name: string;
     email: string;
     avatar?: string;
+    credits?: number;
+    role?: string;
 }
 
 interface AuthContextType {
@@ -13,6 +15,7 @@ interface AuthContextType {
     login: (data: any) => Promise<void>;
     register: (data: any) => Promise<void>;
     logout: () => void;
+    refreshUser: () => Promise<void>;
     isAuthenticated: boolean;
     loading: boolean;
     backendReady: boolean;
@@ -67,8 +70,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         setUser(null);
-        // Reloading works better in Electron - clears state and ProtectedRoute handles redirect to login
         window.location.reload();
+    };
+
+    const refreshUser = async () => {
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) return;
+            const res = await fetch(`${API_BASE_URL}/api/user/profile`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.success) {
+                    const updatedUser = { ...user, ...data.data };
+                    setUser(updatedUser);
+                    localStorage.setItem('user', JSON.stringify(updatedUser));
+                }
+            }
+        } catch (error) {
+            console.error('Refresh user error:', error);
+        }
     };
 
     return (
@@ -77,6 +99,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             login,
             register,
             logout,
+            refreshUser,
             isAuthenticated: !!user,
             loading,
             backendReady,

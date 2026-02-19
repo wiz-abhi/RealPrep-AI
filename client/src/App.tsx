@@ -19,6 +19,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { FeaturesPage } from './pages/FeaturesPage';
 import { PricingPage } from './pages/PricingPage';
 import { PreJoinPage } from './pages/PreJoinPage';
+import { AdminPage } from './pages/AdminPage';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -60,6 +61,7 @@ const AppContent = () => {
         <Route path="/history" element={<ProtectedRoute><HistoryPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><AdminPage /></ProtectedRoute>} />
       </Routes>
     </AppLayout>
   );

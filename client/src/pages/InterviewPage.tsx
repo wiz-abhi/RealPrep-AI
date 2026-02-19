@@ -24,10 +24,11 @@ export const InterviewPage = () => {
     const [sessionLoading, setSessionLoading] = useState(true);
     const [sessionError, setSessionError] = useState<string | null>(null);
 
-    // Timer state
-    const [remainingSeconds, setRemainingSeconds] = useState<number>(0);
-    const [startedAt, setStartedAt] = useState<string>('');
-    const [_durationMinutes, setDurationMinutes] = useState<number>(30);
+    // Timer state — tracks actual elapsed seconds (persisted to DB)
+    const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+    const [totalDurationSeconds, setTotalDurationSeconds] = useState<number>(30 * 60);
+    const elapsedRef = useRef<number>(0); // ref for use in effects/cleanup
+    const timerActiveRef = useRef<boolean>(false);
 
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -86,23 +87,13 @@ export const InterviewPage = () => {
                 console.log('Session Loaded:', data);
                 const session = data.data;
 
-                // Set timer values
-                setStartedAt(session.startedAt);
-                setDurationMinutes(session.durationMinutes);
-
-                // Calculate remaining time
-                let startTime = new Date(session.startedAt).getTime();
-                if (isNaN(startTime)) {
-                    console.warn('Invalid startedAt date, defaulting to now');
-                    startTime = Date.now();
-                }
-
-                const endTime = startTime + (session.durationMinutes * 60 * 1000);
-                const now = Date.now();
-                const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
-
-                console.log('Timer Init:', { startedAt: session.startedAt, duration: session.durationMinutes, remaining, startTime, endTime, now });
-                setRemainingSeconds(remaining);
+                // Set timer values from server
+                const totalSecs = (session.durationMinutes || 30) * 60;
+                const serverElapsed = session.elapsedSeconds || 0;
+                setTotalDurationSeconds(totalSecs);
+                setElapsedSeconds(serverElapsed);
+                elapsedRef.current = serverElapsed;
+                timerActiveRef.current = true;
 
                 // Load existing transcript
                 if (session.transcript && session.transcript.length > 0) {
@@ -135,31 +126,78 @@ export const InterviewPage = () => {
         fetchSession();
     }, [sessionId, navigate, playResponse]);
 
-    // Countdown timer
+    // ── Elapsed-seconds timer ──
+    // Ticks every second while the interview page is open
     useEffect(() => {
-        if (remainingSeconds <= 0) return;
+        if (sessionLoading) return;
+        if (!timerActiveRef.current) return;
 
         const timer = setInterval(() => {
-            setRemainingSeconds(prev => {
-                if (prev <= 1) {
-                    clearInterval(timer);
-                    // Auto-end session when time is up - will be handled after render
-                    return 0;
-                }
-                return prev - 1;
+            setElapsedSeconds(prev => {
+                const next = prev + 1;
+                elapsedRef.current = next;
+                return next;
             });
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [remainingSeconds]);
+    }, [sessionLoading]);
+
+    // Persist elapsed to DB every 30 seconds
+    useEffect(() => {
+        if (sessionLoading) return;
+
+        const persist = setInterval(() => {
+            const token = localStorage.getItem('token');
+            fetch(`${API_BASE_URL}/api/interview/session/${sessionId}/elapsed`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ elapsedSeconds: elapsedRef.current })
+            }).catch(err => console.error('Failed to persist elapsed time:', err));
+        }, 30000);
+
+        return () => clearInterval(persist);
+    }, [sessionId, sessionLoading]);
+
+    // Persist elapsed on unmount and page close
+    useEffect(() => {
+        const saveElapsed = () => {
+            const token = localStorage.getItem('token');
+            if (token && sessionId) {
+                // Use sendBeacon for reliable save on page close
+                const data = JSON.stringify({ elapsedSeconds: elapsedRef.current });
+                navigator.sendBeacon?.(
+                    `${API_BASE_URL}/api/interview/session/${sessionId}/elapsed`,
+                    new Blob([data], { type: 'application/json' })
+                );
+            }
+        };
+
+        window.addEventListener('beforeunload', saveElapsed);
+        return () => {
+            window.removeEventListener('beforeunload', saveElapsed);
+            // Also persist on component unmount (navigation)
+            const token = localStorage.getItem('token');
+            if (token && sessionId) {
+                fetch(`${API_BASE_URL}/api/interview/session/${sessionId}/elapsed`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ elapsedSeconds: elapsedRef.current })
+                }).catch(() => { });
+            }
+        };
+    }, [sessionId]);
+
+    // Compute remaining from elapsed
+    const remainingSeconds = Math.max(0, totalDurationSeconds - elapsedSeconds);
 
     // Auto-end when timer reaches 0
     useEffect(() => {
-        if (remainingSeconds === 0 && startedAt && !sessionLoading) {
-            // Timer has expired - auto-save and end
+        if (remainingSeconds === 0 && timerActiveRef.current && !sessionLoading) {
+            timerActiveRef.current = false;
             handleAutoEnd();
         }
-    }, [remainingSeconds, startedAt, sessionLoading]);
+    }, [remainingSeconds, sessionLoading]);
 
     const handleAutoEnd = async () => {
         // Stop any ongoing speech and recording when timer expires

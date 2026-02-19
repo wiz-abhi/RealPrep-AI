@@ -98,12 +98,33 @@ export const startSession = async (req: Request, res: Response) => {
             return res.status(404).json({ error: 'Resume not found' });
         }
 
-        // Get user's name for personalized greeting
-        const user = await retryDbOperation(() => prisma.user.findUnique({
+        // ── Credit Check ──
+        // 1 credit = 1 minute of interview
+        const requiredCredits = Number(durationMinutes);
+        const userRecord = await retryDbOperation(() => prisma.user.findUnique({
             where: { id: userId },
-            select: { name: true }
-        })) as { name: string | null } | null;
-        const userName = user?.name || 'there';
+            select: { name: true, credits: true }
+        })) as { name: string | null; credits: number } | null;
+
+        if (!userRecord) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        if (userRecord.credits < requiredCredits) {
+            return res.status(403).json({
+                error: 'Insufficient credits',
+                required: requiredCredits,
+                available: userRecord.credits
+            });
+        }
+
+        // Deduct credits
+        await retryDbOperation(() => prisma.user.update({
+            where: { id: userId },
+            data: { credits: { decrement: requiredCredits } }
+        }));
+
+        const userName = userRecord.name || 'there';
 
         // Retrieve relevant context from RAG
         const query = instructionPrompt || "Tell me about your skills and experience";
@@ -226,6 +247,7 @@ export const getSession = async (req: Request, res: Response) => {
                 type: session.type,
                 startedAt: feedback?.startedAt || session.createdAt.toISOString(),
                 durationMinutes: feedback?.durationMinutes || 30,
+                elapsedSeconds: feedback?.elapsedSeconds || 0,
                 transcript: session.transcript.map((t: { sender: string; text: string; timestamp: Date }) => ({
                     sender: t.sender,
                     text: t.text,
@@ -277,6 +299,40 @@ export const updateSessionDuration = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Update duration error:', error);
         res.status(500).json({ error: 'Failed to update duration' });
+    }
+};
+
+// Save the actual elapsed seconds for a session (called periodically by the frontend)
+export const updateElapsedTime = async (req: Request, res: Response) => {
+    try {
+        const { sessionId } = req.params;
+        const { elapsedSeconds } = req.body;
+
+        if (typeof elapsedSeconds !== 'number' || elapsedSeconds < 0) {
+            return res.status(400).json({ error: 'elapsedSeconds must be a non-negative number' });
+        }
+
+        const session = await prisma.session.findUnique({
+            where: { id: sessionId }
+        });
+
+        if (!session) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+
+        const currentFeedback = (session.feedback as any) || {};
+
+        await prisma.session.update({
+            where: { id: sessionId },
+            data: {
+                feedback: { ...currentFeedback, elapsedSeconds: Math.round(elapsedSeconds) }
+            }
+        });
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Update elapsed time error:', error);
+        res.status(500).json({ error: 'Failed to update elapsed time' });
     }
 };
 

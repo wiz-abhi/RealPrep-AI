@@ -13,6 +13,7 @@ export const RegisterPage = () => {
         e.preventDefault();
         try {
             await register(formData);
+            localStorage.setItem('showWelcome', 'true');
             navigate('/dashboard');
         } catch (err: any) {
             setError(err.message || 'Registration failed');

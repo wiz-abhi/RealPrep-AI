@@ -72,6 +72,12 @@ export const InterviewSetupPage = () => {
 
             const data = await res.json();
 
+            if (res.status === 403 && data.error === 'Insufficient credits') {
+                setError(`Insufficient credits! You need ${data.required} credits but only have ${data.available}. Contact admin for more.`);
+                setUploading(false); // Ensure uploading state is reset
+                return;
+            }
+
             if (data.success) {
                 navigate('/pre-join', {
                     state: {
@@ -170,6 +176,28 @@ export const InterviewSetupPage = () => {
                         <p className="text-xs text-white/30 mt-3">
                             Interview will auto-save when time expires
                         </p>
+
+                        {/* Credit Info */}
+                        <div className={`mt-4 p-3 rounded-lg border ${(user?.credits ?? 0) < durationMinutes
+                                ? 'bg-red-500/10 border-red-500/20'
+                                : 'bg-white/5 border-white/10'
+                            }`}>
+                            <div className="flex items-center justify-between text-xs">
+                                <span className="text-white/50">Your credits</span>
+                                <span className={`font-mono font-medium ${(user?.credits ?? 0) < durationMinutes ? 'text-red-400' : 'text-emerald-400'}`}>
+                                    {user?.credits ?? 0}
+                                </span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs mt-1">
+                                <span className="text-white/50">Cost ({durationMinutes} min)</span>
+                                <span className="text-white/70 font-mono">−{durationMinutes}</span>
+                            </div>
+                            {(user?.credits ?? 0) < durationMinutes && (
+                                <p className="text-[10px] text-red-400/80 mt-2">
+                                    Not enough credits. Choose a shorter duration or contact admin.
+                                </p>
+                            )}
+                        </div>
                     </GlassCard>
 
                     {/* Reference Documents */}
@@ -239,10 +267,10 @@ export const InterviewSetupPage = () => {
                         </button>
                         <button
                             onClick={handleStartInterview}
-                            disabled={uploading}
-                            className="btn-primary flex-1 text-sm"
+                            disabled={uploading || (user?.credits ?? 0) < durationMinutes}
+                            className="btn-primary flex-1 text-sm disabled:opacity-40"
                         >
-                            {uploading ? 'Starting...' : 'Start Interview →'}
+                            {uploading ? 'Starting...' : (user?.credits ?? 0) < durationMinutes ? 'Insufficient Credits' : 'Start Interview →'}
                         </button>
                     </div>
                 </div>

@@ -6,10 +6,11 @@ import { useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 
 export const DashboardPage = () => {
-    const { user } = useAuth();
+    const { user, refreshUser } = useAuth();
     const navigate = useNavigate();
     const [sessions, setSessions] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [showWelcome, setShowWelcome] = useState(false);
 
     useEffect(() => {
         const fetchSessions = async () => {
@@ -35,6 +36,19 @@ export const DashboardPage = () => {
             }
         };
         fetchSessions();
+    }, []);
+
+    // Refresh user data (credits may have changed)
+    useEffect(() => {
+        refreshUser();
+    }, []);
+
+    // Check for welcome flag (set after registration)
+    useEffect(() => {
+        if (localStorage.getItem('showWelcome') === 'true') {
+            setShowWelcome(true);
+            localStorage.removeItem('showWelcome');
+        }
     }, []);
 
     const totalSessions = sessions.length;
@@ -73,7 +87,14 @@ export const DashboardPage = () => {
                     </div>
 
                     {/* Stats */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <GlassCard hover>
+                            <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Available Credits</p>
+                            <div className="flex items-baseline gap-2">
+                                <p className={`text-3xl font-light ${(user?.credits ?? 0) > 20 ? 'text-emerald-400' : (user?.credits ?? 0) > 0 ? 'text-yellow-400' : 'text-red-400'}`}>{user?.credits ?? 0}</p>
+                                <span className="text-xs text-white/20">credits</span>
+                            </div>
+                        </GlassCard>
                         <GlassCard hover>
                             <p className="text-[10px] uppercase tracking-widest text-white/30 mb-2">Total Sessions</p>
                             {loading ? (
@@ -172,6 +193,33 @@ export const DashboardPage = () => {
                     </GlassCard>
                 </div>
             </main>
+
+            {/* Welcome Popup */}
+            {showWelcome && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+                    <div className="bg-zinc-900 border border-white/10 rounded-2xl p-8 max-w-sm mx-4 text-center shadow-2xl animate-in">
+                        <div className="text-5xl mb-4">🎉</div>
+                        <h2 className="text-xl font-semibold text-white mb-2">Welcome to RealPrep!</h2>
+                        <p className="text-sm text-white/50 mb-4">
+                            You've been credited with
+                        </p>
+                        <div className="inline-flex items-baseline gap-1 bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-6 py-3 mb-4">
+                            <span className="text-4xl font-bold text-emerald-400">50</span>
+                            <span className="text-sm text-emerald-400/70">credits</span>
+                        </div>
+                        <p className="text-xs text-white/40 mb-6">
+                            1 credit = 1 minute of interview practice.<br />
+                            Use them wisely to ace your interviews!
+                        </p>
+                        <button
+                            onClick={() => setShowWelcome(false)}
+                            className="btn-primary w-full text-sm"
+                        >
+                            Let's Go! 🚀
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
