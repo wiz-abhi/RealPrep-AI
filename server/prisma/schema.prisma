@@ -16,6 +16,7 @@ model User {
   name      String?
   credits   Int      @default(50)
   role      String   @default("user")  // "user" | "admin"
+  banned    Boolean  @default(false)
   createdAt DateTime @default(now())
   
   resumes   Resume[]

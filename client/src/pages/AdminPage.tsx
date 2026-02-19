@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL } from '../config/api';
 import { useNavigate } from 'react-router-dom';
-import { Shield, Users, CreditCard, Search, Save, X, ArrowLeft } from 'lucide-react';
+import { Shield, Users, CreditCard, Search, Save, X, ArrowLeft, Ban, ShieldCheck } from 'lucide-react';
 
 interface AdminUser {
     id: string;
@@ -12,6 +12,7 @@ interface AdminUser {
     role: string;
     createdAt: string;
     sessionCount: number;
+    banned: boolean;
 }
 
 export const AdminPage = () => {
@@ -89,6 +90,29 @@ export const AdminPage = () => {
             console.error('Save credits error:', err);
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleToggleBan = async (userId: string, currentBanned: boolean) => {
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${API_BASE_URL}/api/admin/users/${userId}/ban`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ banned: !currentBanned })
+            });
+
+            const data = await res.json();
+            if (data.success) {
+                setUsers(prev => prev.map(u =>
+                    u.id === userId ? { ...u, banned: !currentBanned } : u
+                ));
+            }
+        } catch (err) {
+            console.error('Toggle ban error:', err);
         }
     };
 
@@ -241,24 +265,45 @@ export const AdminPage = () => {
                                             )}
                                         </td>
                                         <td className="px-5 py-4 text-center">
-                                            <span className={`text-xs px-2 py-1 rounded-full font-medium ${u.role === 'admin'
-                                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                                : 'bg-white/5 text-white/40 border border-white/10'
-                                                }`}>
-                                                {u.role}
-                                            </span>
+                                            <div className="flex items-center justify-center gap-2">
+                                                <span className={`text-xs px-2 py-1 rounded-full font-medium ${u.role === 'admin'
+                                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                    : 'bg-white/5 text-white/40 border border-white/10'
+                                                    }`}>
+                                                    {u.role}
+                                                </span>
+                                                {u.banned && (
+                                                    <span className="text-xs px-2 py-1 rounded-full font-medium bg-red-500/20 text-red-400 border border-red-500/30">
+                                                        Banned
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                         <td className="px-5 py-4 text-center text-sm text-white/50">{u.sessionCount}</td>
                                         <td className="px-5 py-4 text-sm text-white/40">
                                             {new Date(u.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                                         </td>
                                         <td className="px-5 py-4 text-center">
-                                            <button
-                                                onClick={() => handleEditCredits(u.id, u.credits)}
-                                                className="text-xs px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition-all"
-                                            >
-                                                Edit Credits
-                                            </button>
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button
+                                                    onClick={() => handleEditCredits(u.id, u.credits)}
+                                                    className="text-xs px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-white/60 hover:text-white hover:bg-white/10 transition-all"
+                                                >
+                                                    Edit Credits
+                                                </button>
+                                                {u.role !== 'admin' && (
+                                                    <button
+                                                        onClick={() => handleToggleBan(u.id, u.banned)}
+                                                        className={`text-xs px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1 ${u.banned
+                                                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20'
+                                                                : 'bg-red-500/10 border-red-500/20 text-red-400 hover:bg-red-500/20'
+                                                            }`}
+                                                    >
+                                                        {u.banned ? <ShieldCheck size={12} /> : <Ban size={12} />}
+                                                        {u.banned ? 'Unban' : 'Ban'}
+                                                    </button>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}

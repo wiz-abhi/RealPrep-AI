@@ -15,6 +15,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
                 email: true,
                 credits: true,
                 role: true,
+                banned: true,
                 createdAt: true,
                 _count: {
                     select: { sessions: true }
@@ -28,6 +29,7 @@ export const getAllUsers = async (req: Request, res: Response) => {
             email: u.email,
             credits: u.credits,
             role: u.role,
+            banned: u.banned,
             createdAt: u.createdAt,
             sessionCount: u._count.sessions
         }));
@@ -68,5 +70,32 @@ export const updateUserCredits = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Update credits error:', error);
         res.status(500).json({ error: 'Failed to update credits' });
+    }
+};
+
+/**
+ * PUT /api/admin/users/:userId/ban
+ * Toggle a user's banned status.
+ * Body: { banned: boolean }
+ */
+export const toggleBanUser = async (req: Request, res: Response) => {
+    try {
+        const { userId } = req.params;
+        const { banned } = req.body;
+
+        if (typeof banned !== 'boolean') {
+            return res.status(400).json({ error: 'banned must be a boolean' });
+        }
+
+        const user = await prisma.user.update({
+            where: { id: userId },
+            data: { banned },
+            select: { id: true, banned: true }
+        });
+
+        res.json({ success: true, data: user });
+    } catch (error) {
+        console.error('Toggle ban error:', error);
+        res.status(500).json({ error: 'Failed to update ban status' });
     }
 };

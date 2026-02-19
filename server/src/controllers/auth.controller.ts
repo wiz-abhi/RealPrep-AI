@@ -36,6 +36,10 @@ export const login = async (req: Request, res: Response) => {
         const isValid = await comparePassword(password, user.password);
         if (!isValid) return res.status(400).json({ error: 'Invalid credentials' });
 
+        if (user.banned) {
+            return res.status(403).json({ error: 'SERVICE_UNAVAILABLE', message: 'We sincerely apologize for the inconvenience. This service is currently unavailable for your account. Please contact support for assistance.' });
+        }
+
         const token = generateToken(user.id);
         res.json({ token, user: { id: user.id, name: user.name, email: user.email, credits: user.credits, role: user.role } });
 
