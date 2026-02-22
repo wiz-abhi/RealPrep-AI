@@ -12,6 +12,7 @@ export const InterviewSetupPage = () => {
     const { resumeId } = location.state || {};
 
     const [instructionPrompt, setInstructionPrompt] = useState('');
+    const [interviewType, setInterviewType] = useState<'technical' | 'behavioral' | 'systemDesign'>('technical');
     const [referenceFile, setReferenceFile] = useState<File | null>(null);
     const [referenceType, setReferenceType] = useState<'SamplePaper' | 'JobDescription'>('JobDescription');
     const [durationMinutes, setDurationMinutes] = useState(30);
@@ -66,6 +67,7 @@ export const InterviewSetupPage = () => {
                     userId: user?.id,
                     resumeId,
                     instructionPrompt: instructionPrompt || 'Conduct a comprehensive technical interview focusing on my skills and experience.',
+                    interviewType,
                     durationMinutes
                 })
             });
@@ -97,6 +99,12 @@ export const InterviewSetupPage = () => {
         }
     };
 
+    const interviewTypes = [
+        { key: 'technical' as const, label: 'Technical', emoji: '💻', desc: 'DSA, coding, system concepts' },
+        { key: 'behavioral' as const, label: 'Behavioral', emoji: '🤝', desc: 'STAR method, teamwork, leadership' },
+        { key: 'systemDesign' as const, label: 'System Design', emoji: '🏗️', desc: 'Architecture, scalability, trade-offs' },
+    ];
+
     const promptSuggestions = [
         "Focus on system design",
         "Behavioral questions",
@@ -105,6 +113,19 @@ export const InterviewSetupPage = () => {
         "AI/ML experience",
         "Cloud technologies"
     ];
+
+    // Auto-detect interview type from quick suggestion click
+    const handleSuggestionClick = (suggestion: string) => {
+        setInstructionPrompt(suggestion);
+        const lower = suggestion.toLowerCase();
+        if (lower.includes('behavioral')) {
+            setInterviewType('behavioral');
+        } else if (lower.includes('system design')) {
+            setInterviewType('systemDesign');
+        } else {
+            setInterviewType('technical');
+        }
+    };
 
     return (
         <div className="flex min-h-screen bg-black text-white">
@@ -126,10 +147,34 @@ export const InterviewSetupPage = () => {
                         </div>
                     )}
 
+                    {/* Interview Type Selector */}
+                    <GlassCard className="p-6">
+                        <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">
+                            Interview Type
+                        </h2>
+                        <div className="grid grid-cols-3 gap-3">
+                            {interviewTypes.map((type) => (
+                                <button
+                                    key={type.key}
+                                    onClick={() => setInterviewType(type.key)}
+                                    className={`p-4 rounded-lg border text-left transition-all ${interviewType === type.key
+                                            ? 'bg-white/10 border-white/30 ring-1 ring-white/20'
+                                            : 'bg-white/5 border-white/10 hover:border-white/20'
+                                        }`}
+                                >
+                                    <div className="text-xl mb-2">{type.emoji}</div>
+                                    <div className={`text-sm font-medium ${interviewType === type.key ? 'text-white' : 'text-white/70'
+                                        }`}>{type.label}</div>
+                                    <div className="text-[10px] text-white/30 mt-1">{type.desc}</div>
+                                </button>
+                            ))}
+                        </div>
+                    </GlassCard>
+
                     {/* Instructions */}
                     <GlassCard className="p-6">
                         <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">
-                            Interview Focus
+                            Interview Focus <span className="text-white/30">(Optional)</span>
                         </h2>
                         <textarea
                             value={instructionPrompt}
@@ -144,7 +189,7 @@ export const InterviewSetupPage = () => {
                                 {promptSuggestions.map((suggestion, i) => (
                                     <button
                                         key={i}
-                                        onClick={() => setInstructionPrompt(suggestion)}
+                                        onClick={() => handleSuggestionClick(suggestion)}
                                         className="px-3 py-1.5 text-xs rounded bg-white/5 border border-white/5 hover:border-white/20 transition-all text-white/60 hover:text-white/90"
                                     >
                                         {suggestion}

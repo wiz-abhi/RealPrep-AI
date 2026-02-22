@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Editor from 'react-simple-code-editor';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-clike';
@@ -25,15 +25,78 @@ const LANGUAGE_MAP: Record<string, string> = {
     'c++': 'cpp',
 };
 
+const BOILERPLATE: Record<string, string> = {
+    javascript: `// Solution
+
+function solution(input) {
+    // Write your code here
+    
+    return;
+}
+
+// Test
+// console.log(solution());
+`,
+    python: `# Solution
+
+def solution(input):
+    # Write your code here
+    
+    return
+
+# Test
+# print(solution())
+`,
+    java: `import java.util.*;
+
+public class Solution {
+    public static int solution(int[] input) {
+        // Write your code here
+        
+        return 0;
+    }
+
+    public static void main(String[] args) {
+        // Test your solution
+        
+    }
+}
+`,
+    cpp: `#include <iostream>
+#include <vector>
+#include <algorithm>
+using namespace std;
+
+int solution(vector<int>& input) {
+    // Write your code here
+    
+    return 0;
+}
+
+int main() {
+    // Test your solution
+    
+    return 0;
+}
+`,
+};
+
 export const CodeEditor: React.FC<CodeEditorProps> = ({
     language: initialLanguage = 'javascript',
     onCodeChange,
     onSubmit,
     isSubmitting = false,
-    initialCode = '// Write your code here...\n\nfunction solution() {\n    \n}'
+    initialCode
 }) => {
-    const [code, setCode] = useState(initialCode);
+    const [code, setCode] = useState(initialCode || BOILERPLATE[initialLanguage] || BOILERPLATE.javascript);
     const [language, setLanguage] = useState(initialLanguage);
+    const [editorReady, setEditorReady] = useState(false);
+
+    // Simulate editor initialisation (Prism loading, etc.)
+    useEffect(() => {
+        const timer = setTimeout(() => setEditorReady(true), 400);
+        return () => clearTimeout(timer);
+    }, []);
 
     const handleChange = (newCode: string) => {
         setCode(newCode);
@@ -41,13 +104,24 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     };
 
     const handleLanguageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setLanguage(e.target.value);
+        const newLang = e.target.value;
+        setLanguage(newLang);
+        // Reset to the new language's boilerplate
+        const newBoilerplate = BOILERPLATE[newLang] || BOILERPLATE.javascript;
+        setCode(newBoilerplate);
+        if (onCodeChange) onCodeChange(newBoilerplate);
     };
 
     const handleSubmit = async () => {
         if (onSubmit && code.trim()) {
             await onSubmit(code, language);
         }
+    };
+
+    const handleReset = () => {
+        const boilerplate = BOILERPLATE[language] || BOILERPLATE.javascript;
+        setCode(boilerplate);
+        if (onCodeChange) onCodeChange(boilerplate);
     };
 
     const getHighlighter = (code: string) => {
@@ -79,7 +153,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={() => setCode('// Write your code here...\n\nfunction solution() {\n    \n}')}
+                        onClick={handleReset}
                         className="text-gray-400 hover:text-white transition-colors text-sm"
                         title="Reset code"
                         disabled={isSubmitting}
@@ -91,21 +165,28 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
 
             {/* Editor Area */}
             <div className="flex-1 overflow-auto">
-                <Editor
-                    value={code}
-                    onValueChange={handleChange}
-                    highlight={getHighlighter}
-                    padding={16}
-                    disabled={isSubmitting}
-                    style={{
-                        fontFamily: '"Fira Code", "Fira Mono", monospace',
-                        fontSize: 14,
-                        minHeight: '100%',
-                        backgroundColor: '#1d1f21',
-                        color: '#c5c8c6',
-                    }}
-                    className="code-editor-textarea"
-                />
+                {!editorReady ? (
+                    <div className="flex-1 flex items-center justify-center gap-3 h-full min-h-[200px]">
+                        <div className="animate-spin h-5 w-5 border-2 border-cyan-400 border-t-transparent rounded-full" />
+                        <span className="text-sm text-white/50">Initialising Code Editor...</span>
+                    </div>
+                ) : (
+                    <Editor
+                        value={code}
+                        onValueChange={handleChange}
+                        highlight={getHighlighter}
+                        padding={16}
+                        disabled={isSubmitting}
+                        style={{
+                            fontFamily: '"Fira Code", "Fira Mono", monospace',
+                            fontSize: 14,
+                            minHeight: '100%',
+                            backgroundColor: '#1d1f21',
+                            color: '#c5c8c6',
+                        }}
+                        className="code-editor-textarea"
+                    />
+                )}
             </div>
 
             {/* Footer */}

@@ -191,6 +191,23 @@ export const InterviewPage = () => {
     // Compute remaining from elapsed
     const remainingSeconds = Math.max(0, totalDurationSeconds - elapsedSeconds);
 
+    // Force stop mic at 30 seconds — no more user input
+    useEffect(() => {
+        if (remainingSeconds <= 30 && remainingSeconds > 0 && timerActiveRef.current && !sessionLoading) {
+            if (isRecording) {
+                stopRecording();
+            }
+        }
+    }, [remainingSeconds, sessionLoading, isRecording, stopRecording]);
+
+    // Auto-end at 5 seconds — forcefully end interview
+    useEffect(() => {
+        if (remainingSeconds <= 5 && remainingSeconds > 0 && timerActiveRef.current && !sessionLoading) {
+            timerActiveRef.current = false;
+            handleAutoEnd();
+        }
+    }, [remainingSeconds, sessionLoading]);
+
     // Auto-end when timer reaches 0
     useEffect(() => {
         if (remainingSeconds === 0 && timerActiveRef.current && !sessionLoading) {
@@ -255,7 +272,7 @@ export const InterviewPage = () => {
                     'Authorization': `Bearer ${token}`,
                     ...(userGeminiKey && { 'X-User-Gemini-Key': userGeminiKey })
                 },
-                body: JSON.stringify({ sessionId, message: text, emotions: emotions.slice(0, 5) })
+                body: JSON.stringify({ sessionId, message: text, emotions: emotions.slice(0, 5), remainingSeconds, totalDurationSeconds })
             });
 
             const data = await res.json();
@@ -345,7 +362,12 @@ export const InterviewPage = () => {
         if (messages.length === 0) return;
         const lastMessage = messages[messages.length - 1];
         if (lastMessage.sender === 'ai') {
-            const codingKeywords = ['write a function', 'implement', 'write code', 'code this', 'write the code', 'coding', 'algorithm', 'function that', 'method that', 'write a program'];
+            const codingKeywords = [
+                'write a function', 'write code', 'write the code', 'write a program',
+                'solve this problem', 'implement a solution', 'code this up',
+                'use the code editor', 'open your code editor', 'coding problem',
+                'here is the problem', 'here\'s the problem', 'solve the following'
+            ];
             const lowerText = lastMessage.text.toLowerCase();
             const isCodingQuestion = codingKeywords.some(kw => lowerText.includes(kw));
             if (isCodingQuestion && !showEditor) {

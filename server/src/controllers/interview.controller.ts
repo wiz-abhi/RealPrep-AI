@@ -338,7 +338,7 @@ export const updateElapsedTime = async (req: Request, res: Response) => {
 
 export const chat = async (req: Request, res: Response) => {
     try {
-        const { sessionId, message, emotions } = req.body;
+        const { sessionId, message, emotions, remainingSeconds } = req.body;
         const userGeminiKey = req.headers['x-user-gemini-key'] as string | undefined;
 
         // Get session with system instruction
@@ -409,9 +409,31 @@ export const chat = async (req: Request, res: Response) => {
             emotionContext = `\n\n[Candidate's current emotional state: ${topEmotions}. Adapt your tone accordingly.]`;
         }
 
+        // Build time context for AI time management (percentage-based)
+        let timeContext = '';
+        const totalDurationSeconds = req.body.totalDurationSeconds;
+        if (typeof remainingSeconds === 'number' && typeof totalDurationSeconds === 'number' && totalDurationSeconds > 0) {
+            const pct = (remainingSeconds / totalDurationSeconds) * 100;
+            const mins = Math.floor(remainingSeconds / 60);
+            const secs = remainingSeconds % 60;
+            const timeStr = mins > 0 ? `${mins} min ${secs}s` : `${secs} seconds`;
+
+            if (remainingSeconds <= 30) {
+                timeContext = `\n\n[TIME REMAINING: ${timeStr}. The interview duration is over. Do NOT ask any new questions. Immediately deliver a warm thank-you closing note. Say something like: "Thank you so much for your time today! It was wonderful discussing [topic] with you. I was really impressed by [strength]. Best of luck!"]`;
+            } else if (pct <= 10) {
+                timeContext = `\n\n[TIME REMAINING: ~${timeStr}. Almost out of time. Wrap up now — give brief positive feedback and your closing thank-you. No new questions.]`;
+            } else if (pct <= 25) {
+                timeContext = `\n\n[TIME REMAINING: ~${timeStr}. Start wrapping up. Ask at most one final quick question, then prepare your closing.]`;
+            } else if (pct <= 50) {
+                timeContext = `\n\n[TIME REMAINING: ~${timeStr}. Past the halfway mark. Be mindful of time — keep questions focused.]`;
+            } else {
+                timeContext = `\n\n[TIME REMAINING: ~${timeStr}. Plenty of time. Continue normally.]`;
+            }
+        }
+
         // Get AI response with system instruction (use user's key if provided)
         const aiResponse = await gemini.generateInterviewResponse(
-            systemInstruction + emotionContext,
+            systemInstruction + emotionContext + timeContext,
             conversation,
             message,
             userGeminiKey // Pass user's custom key if available
