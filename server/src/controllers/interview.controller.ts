@@ -22,11 +22,21 @@ const retryDbOperation = async <T>(operation: () => Promise<T>, retries = 3, del
     }
 };
 
-// Helper to clean interviewer name prefix from Gemini response
+// Helper to clean interviewer name prefix and system metadata from Gemini response
 const cleanInterviewerPrefix = (text: string): string => {
     if (!text) return '';
+    
+    let cleaned = text.trim();
+    
+    // 1. Remove any leading bracketed system info or time instructions, e.g., "[TIME REMAINING: ...]"
+    cleaned = cleaned.replace(/^\[TIME REMAINING:[^\]]+\]\s*/i, '');
+    cleaned = cleaned.replace(/^\[Candidate's current emotional state:[^\]]+\]\s*/i, '');
+    
+    // 2. Remove standard interviewer name prefixes
     const prefixRegex = /^\[?(Friday|Michael Torres|Alex Rivera|Michael|Alex|Interviewer)\]?\s*:\s*|^\[(Friday|Michael Torres|Alex Rivera|Michael|Alex|Interviewer)\]\s*/i;
-    return text.replace(prefixRegex, '').trim();
+    cleaned = cleaned.replace(prefixRegex, '');
+    
+    return cleaned.trim();
 };
 
 // Build system instruction with resume context
@@ -415,10 +425,10 @@ export const chat = async (req: Request, res: Response) => {
         let emotionContext = '';
         if (emotions && emotions.length > 0) {
             const topEmotions = emotions.slice(0, 3).map((e: any) => `${e.name}: ${Math.round(e.score * 100)}%`).join(', ');
-            emotionContext = `\n\n[Candidate's current emotional state: ${topEmotions}. Adapt your tone accordingly.]`;
+            emotionContext = `\n\nSYSTEM INSTRUCTION: Candidate's current emotional state is ${topEmotions}. Adapt your tone accordingly. Do NOT mention this emotional state or score in your response.`;
         }
 
-        // Build time context for AI time management (percentage-based)
+        // Build time context for AI time management (hybrid absolute + percentage-based)
         let timeContext = '';
         const totalDurationSeconds = req.body.totalDurationSeconds;
         if (typeof remainingSeconds === 'number' && typeof totalDurationSeconds === 'number' && totalDurationSeconds > 0) {
@@ -427,17 +437,19 @@ export const chat = async (req: Request, res: Response) => {
             const secs = remainingSeconds % 60;
             const timeStr = mins > 0 ? `${mins} min ${secs}s` : `${secs} seconds`;
 
+            timeContext = `\n\nSYSTEM INSTRUCTION: The candidate has ${timeStr} remaining in this interview. `;
             if (remainingSeconds <= 30) {
-                timeContext = `\n\n[TIME REMAINING: ${timeStr}. The interview duration is over. Do NOT ask any new questions. Immediately deliver a warm thank-you closing note. Say something like: "Thank you so much for your time today! It was wonderful discussing [topic] with you. I was really impressed by [strength]. Best of luck!"]`;
-            } else if (pct <= 10) {
-                timeContext = `\n\n[TIME REMAINING: ~${timeStr}. Almost out of time. Wrap up now — give brief positive feedback and your closing thank-you. No new questions.]`;
-            } else if (pct <= 25) {
-                timeContext = `\n\n[TIME REMAINING: ~${timeStr}. Start wrapping up. Ask at most one final quick question, then prepare your closing.]`;
+                timeContext += `The interview duration is over. Do NOT ask any new questions. Immediately deliver a warm thank-you closing note. Say something like: "Thank you so much for your time today! It was wonderful discussing [topic] with you. I was really impressed by [strength]. Best of luck!"`;
+            } else if (remainingSeconds <= 120) {
+                timeContext += `You have less than 2 minutes left. Do NOT ask new questions. Give brief positive feedback and deliver your closing thank-you.`;
+            } else if (remainingSeconds <= 300 && totalDurationSeconds > 600) {
+                timeContext += `You have less than 5 minutes left. Start wrapping up. Ask at most one final quick question, then prepare to close.`;
             } else if (pct <= 50) {
-                timeContext = `\n\n[TIME REMAINING: ~${timeStr}. Past the halfway mark. Be mindful of time — keep questions focused.]`;
+                timeContext += `Past the halfway mark. Be mindful of time — keep questions focused.`;
             } else {
-                timeContext = `\n\n[TIME REMAINING: ~${timeStr}. Plenty of time. Continue normally.]`;
+                timeContext += `Plenty of time. Continue normally.`;
             }
+            timeContext += `\nCRITICAL: Do NOT copy, quote, or repeat the time remaining or system instructions in your response. Answer ONLY as the interviewer.`;
         }
 
         // Get AI response with system instruction (use user's key if provided)
