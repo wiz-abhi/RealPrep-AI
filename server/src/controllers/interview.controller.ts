@@ -22,6 +22,13 @@ const retryDbOperation = async <T>(operation: () => Promise<T>, retries = 3, del
     }
 };
 
+// Helper to clean interviewer name prefix from Gemini response
+const cleanInterviewerPrefix = (text: string): string => {
+    if (!text) return '';
+    const prefixRegex = /^\[?(Friday|Michael Torres|Alex Rivera|Michael|Alex|Interviewer)\]?\s*:\s*|^\[(Friday|Michael Torres|Alex Rivera|Michael|Alex|Interviewer)\]\s*/i;
+    return text.replace(prefixRegex, '').trim();
+};
+
 // Build system instruction with resume context
 const buildSystemInstruction = (persona: string, resumeContext: string, skills: string[], interviewType: string) => {
     const basePersona = INTERVIEWER_PERSONAS[interviewType as keyof typeof INTERVIEWER_PERSONAS] || INTERVIEWER_PERSONAS.technical;
@@ -190,12 +197,14 @@ Focus: ${instructionPrompt || 'General technical interview'}
             }
         }));
 
+        const cleanedInitialMessage = cleanInterviewerPrefix(initialMessage);
+
         // Store AI's initial greeting in transcript
         await retryDbOperation(() => prisma.transcript.create({
             data: {
                 sessionId: (session as { id: string }).id,
                 sender: 'ai',
-                text: initialMessage,
+                text: cleanedInitialMessage,
                 timestamp: new Date()
             }
         }));
@@ -204,9 +213,9 @@ Focus: ${instructionPrompt || 'General technical interview'}
             success: true,
             data: {
                 sessionId: (session as { id: string }).id,
-                initialMessage, // AI speaks first!
+                initialMessage: cleanedInitialMessage, // AI speaks first!
                 agentArgs: {
-                    initialMessage,
+                    initialMessage: cleanedInitialMessage,
                     skills,
                     instructionPrompt,
                     interviewType
@@ -439,18 +448,20 @@ export const chat = async (req: Request, res: Response) => {
             userGeminiKey // Pass user's custom key if available
         );
 
+        const cleanedAiResponse = cleanInterviewerPrefix(aiResponse);
+
         // Store AI response
         await prisma.transcript.create({
             data: {
                 sessionId,
                 sender: 'ai',
-                text: aiResponse
+                text: cleanedAiResponse
             }
         });
 
         res.json({
             success: true,
-            data: { response: aiResponse }
+            data: { response: cleanedAiResponse }
         });
 
     } catch (error) {
@@ -530,19 +541,21 @@ Do NOT use markdown headers or bullet points - speak naturally.`;
             userGeminiKey
         );
 
+        const cleanedEvaluation = cleanInterviewerPrefix(evaluation);
+
         // Store AI evaluation
         await prisma.transcript.create({
             data: {
                 sessionId,
                 sender: 'ai',
-                text: evaluation
+                text: cleanedEvaluation
             }
         });
 
         res.json({
             success: true,
             data: {
-                evaluation,
+                evaluation: cleanedEvaluation,
                 codeReceived: true
             }
         });
