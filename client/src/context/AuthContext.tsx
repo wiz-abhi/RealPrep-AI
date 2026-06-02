@@ -30,12 +30,38 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const [backendReady, setBackendReady] = useState(false);
 
     useEffect(() => {
-        const storedUser = localStorage.getItem('user');
-        const token = localStorage.getItem('token');
-        if (storedUser && token) {
-            setUser(JSON.parse(storedUser));
-        }
-        setLoading(false);
+        const initializeAuth = async () => {
+            const storedUser = localStorage.getItem('user');
+            const token = localStorage.getItem('token');
+            if (storedUser && token) {
+                try {
+                    // Pre-fill state from localStorage for fast initial render
+                    setUser(JSON.parse(storedUser));
+                    
+                    // Verify the token validity with the server
+                    const res = await fetch(`${API_BASE_URL}/api/user/profile`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.success) {
+                            const updatedUser = { ...JSON.parse(storedUser), ...data.data };
+                            setUser(updatedUser);
+                            localStorage.setItem('user', JSON.stringify(updatedUser));
+                        }
+                    } else if (res.status === 401 || res.status === 403) {
+                        // Token is invalid/expired, clear storage to force clean state
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('user');
+                        setUser(null);
+                    }
+                } catch (error) {
+                    console.error('Initial token verification failed:', error);
+                }
+            }
+            setLoading(false);
+        };
+        initializeAuth();
     }, []);
 
     const login = async (credentials: any) => {
@@ -87,6 +113,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
                     setUser(updatedUser);
                     localStorage.setItem('user', JSON.stringify(updatedUser));
                 }
+            } else if (res.status === 401 || res.status === 403) {
+                // If API returns unauthorized/forbidden, token has expired/become invalid
+                logout();
             }
         } catch (error) {
             console.error('Refresh user error:', error);
