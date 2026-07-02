@@ -674,15 +674,35 @@ Provide your response as JSON:
     "improvements": ["<area 1>", "<area 2>"],
     "technicalAccuracy": <number 0-100>,
     "communicationSkills": <number 0-100>,
-    "problemSolving": <number 0-100>
+    "problemSolving": <number 0-100>,
+    "questionAnalysis": [
+        {
+            "question": "<interviewer question text>",
+            "answer": "<candidate answer text>",
+            "score": <number 0-100>,
+            "feedback": "<brief feedback on this specific response>"
+        }
+    ]
 }`;
 
         const evaluationText = await reportGemini.generateText(evaluationPrompt);
         let evaluation;
         try {
             evaluation = JSON.parse(evaluationText);
+            if (!evaluation.questionAnalysis) {
+                evaluation.questionAnalysis = [];
+            }
         } catch {
-            evaluation = { score: 70, summary: 'Interview completed', strengths: [], improvements: [] };
+            evaluation = { 
+                score: 70, 
+                summary: 'Interview completed', 
+                strengths: [], 
+                improvements: [],
+                technicalAccuracy: 70,
+                communicationSkills: 70,
+                problemSolving: 70,
+                questionAnalysis: [] 
+            };
         }
 
         // Add emotional analysis to evaluation

@@ -6,14 +6,16 @@ import Webcam from 'react-webcam';
 import { CodeEditor } from '../components/ui/CodeEditor';
 import { useSpeech } from '../hooks/useSpeech';
 import { useHumeVision } from '../hooks/useHumeVision';
-import { Mic, MicOff, Square, Code, MessageSquare, X, Send, Clock, Bot } from 'lucide-react';
+import { Mic, MicOff, Square, Code, MessageSquare, X, Send, Clock } from 'lucide-react';
+import { AIInterviewerAvatar } from '../components/ui/AIInterviewerAvatar';
+import { SimpleMarkdown } from '../components/ui/SimpleMarkdown';
 
 export const InterviewPage = () => {
     const { sessionId } = useParams<{ sessionId: string }>();
     const navigate = useNavigate();
     const { user } = useAuth();
 
-    const [showChat, setShowChat] = useState(false);
+    const [showChat, setShowChat] = useState(true);
     const [showEditor, setShowEditor] = useState(false);
     const [voiceMode, setVoiceMode] = useState(true);
     const [_hasPlayedInitial, setHasPlayedInitial] = useState(false);
@@ -23,6 +25,7 @@ export const InterviewPage = () => {
     const [showEndModal, setShowEndModal] = useState(false);
     const [sessionLoading, setSessionLoading] = useState(true);
     const [sessionError, setSessionError] = useState<string | null>(null);
+    const [interviewType, setInterviewType] = useState<string>('technical');
 
     // Timer state — tracks actual elapsed seconds (persisted to DB)
     const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
@@ -44,6 +47,7 @@ export const InterviewPage = () => {
         stopRecording,
         playResponse,
         stopSpeaking,
+        audioRef,
         provider: _speechProvider
     } = useSpeech();
 
@@ -95,11 +99,18 @@ export const InterviewPage = () => {
                 elapsedRef.current = serverElapsed;
                 timerActiveRef.current = true;
 
+                // Load interview details
+                const serverType = session.type || session.interviewType || 'technical';
+                const mappedType = serverType.toLowerCase().includes('behavioral') ? 'behavioral' :
+                                   serverType.toLowerCase().includes('system') ? 'systemDesign' : 'technical';
+                setInterviewType(mappedType);
+
                 // Load existing transcript
                 if (session.transcript && session.transcript.length > 0) {
                     setMessages(session.transcript.map((t: any) => ({
                         sender: t.sender,
-                        text: t.text
+                        text: t.text,
+                        timestamp: t.timestamp
                     })));
 
                     // Play the last AI message (greeting or continuation)
@@ -256,9 +267,87 @@ export const InterviewPage = () => {
     }, [sendFrame]);
 
 
+    const voiceModeRef = useRef(voiceMode);
+    useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
+
+    const isRecordingRef = useRef(isRecording);
+    useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+
+    const isSpeakingRef = useRef(isSpeaking);
+    useEffect(() => { isSpeakingRef.current = isSpeaking; }, [isSpeaking]);
+
+    const isLoadingRef = useRef(isLoading);
+    useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+
+    // Keyboard Event Listener for Push-To-Talk (Hold Spacebar) and Skip (Escape)
+    useEffect(() => {
+        const spacePressed = { current: false };
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.code === 'Space') {
+                const target = e.target as HTMLElement;
+                // Don't trigger if user is typing in inputs, textareas, or contenteditables
+                if (
+                    target.tagName === 'INPUT' ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.isContentEditable
+                ) {
+                    return;
+                }
+                
+                // Prevent page scroll
+                e.preventDefault();
+
+                if (!spacePressed.current && voiceModeRef.current && !isLoadingRef.current) {
+                    spacePressed.current = true;
+                    // Trigger recording start
+                    stopSpeaking();
+                    startRecording();
+                }
+            }
+
+            if (e.key === 'Escape') {
+                if (isSpeakingRef.current) {
+                    console.log('Skipping AI speech via Escape key');
+                    stopSpeaking();
+                }
+            }
+        };
+
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.code === 'Space') {
+                const target = e.target as HTMLElement;
+                if (
+                    target.tagName === 'INPUT' ||
+                    target.tagName === 'TEXTAREA' ||
+                    target.isContentEditable
+                ) {
+                    return;
+                }
+
+                e.preventDefault();
+
+                if (spacePressed.current) {
+                    spacePressed.current = false;
+                    if (isRecordingRef.current) {
+                        stopRecording();
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [startRecording, stopRecording, stopSpeaking]);
+
     const handleSendMessage = useCallback(async (text: string) => {
         if (!text.trim() || isLoading) return;
-        setMessages(prev => [...prev, { sender: 'user', text }]);
+        setMessages(prev => [...prev, { sender: 'user', text, timestamp: new Date() }]);
         setTextInput('');
         setIsLoading(true);
 
@@ -277,7 +366,7 @@ export const InterviewPage = () => {
 
             const data = await res.json();
             if (data.success) {
-                setMessages(prev => [...prev, { sender: 'ai', text: data.data.response }]);
+                setMessages(prev => [...prev, { sender: 'ai', text: data.data.response, timestamp: new Date() }]);
                 if (voiceMode) {
                     playResponse(data.data.response);
                 }
@@ -287,7 +376,7 @@ export const InterviewPage = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [sessionId, emotions, voiceMode, playResponse, isLoading]);
+    }, [sessionId, emotions, voiceMode, playResponse, isLoading, remainingSeconds, totalDurationSeconds]);
 
     // Track the last sent transcript to prevent duplicate sends
     const lastSentTranscript = useRef<string>('');
@@ -340,10 +429,11 @@ export const InterviewPage = () => {
                 // Add code submission message
                 setMessages(prev => [...prev, {
                     sender: 'user',
-                    text: `[CODE SUBMISSION - ${language.toUpperCase()}]\n\`\`\`${language}\n${code}\n\`\`\``
+                    text: `[CODE SUBMISSION - ${language.toUpperCase()}]\n\`\`\`${language}\n${code}\n\`\`\``,
+                    timestamp: new Date()
                 }]);
                 // Add AI evaluation
-                setMessages(prev => [...prev, { sender: 'ai', text: data.data.evaluation }]);
+                setMessages(prev => [...prev, { sender: 'ai', text: data.data.evaluation, timestamp: new Date() }]);
 
                 // Play evaluation if in voice mode
                 if (voiceMode) {
@@ -440,25 +530,46 @@ export const InterviewPage = () => {
         };
     }, [stopSpeaking, stopRecording]);
 
+    const formatMsgTime = (timestamp?: any) => {
+        if (!timestamp) return '';
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return '';
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    };
+
     // Render messages list
     const renderMessages = () => (
         <>
             {messages.map((m, i) => (
-                <div key={i} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'}`}>
-                    <span className="text-[8px] mb-0.5 text-white/30">{m.sender === 'user' ? 'You' : 'AI'}</span>
-                    <div className={`max-w-[90%] px-2 py-1.5 rounded text-[11px] leading-relaxed ${m.sender === 'user' ? 'bg-white/10 text-white/80' : 'bg-white/5 text-white/60'}`}>{m.text}</div>
+                <div key={i} className={`flex flex-col ${m.sender === 'user' ? 'items-end' : 'items-start'} mb-1`}>
+                    <span className="text-[8px] mb-0.5 text-white/30">
+                        {m.sender === 'user' ? 'You' : 'AI'} {m.timestamp ? `• ${formatMsgTime(m.timestamp)}` : ''}
+                    </span>
+                    <div className={`max-w-[90%] px-3 py-2 rounded text-[11px] leading-relaxed shadow-sm ${
+                        m.sender === 'user' 
+                            ? 'bg-zinc-800 text-white border border-white/5 rounded-tr-none' 
+                            : 'bg-zinc-900 text-white/95 border border-white/5 rounded-tl-none'
+                    }`}>
+                        <SimpleMarkdown text={m.text} />
+                    </div>
                 </div>
             ))}
             {isRecording && voiceMode && (
                 <div className="flex flex-col items-end animate-pulse">
                     <span className="text-[8px] mb-0.5 text-white/30">Speaking...</span>
-                    <div className="max-w-[90%] px-2 py-1 rounded text-[10px] bg-white/5 border border-dashed border-white/10 text-white/30">{transcript || "..."}</div>
+                    <div className="max-w-[90%] px-3 py-2 rounded text-[10px] bg-white/5 border border-dashed border-white/10 text-white/30 rounded-tr-none">
+                        {transcript || "..."}
+                    </div>
                 </div>
             )}
             {isLoading && (
-                <div className="flex flex-col items-start">
-                    <span className="text-[8px] mb-0.5 text-white/30">AI</span>
-                    <div className="px-2 py-1 rounded text-[10px] bg-white/5 text-white/30 animate-pulse">Thinking...</div>
+                <div className="flex flex-col items-start space-y-1">
+                    <span className="text-[8px] text-white/30">AI</span>
+                    <div className="px-3 py-2 rounded bg-zinc-900 border border-white/5 flex items-center gap-1 rounded-tl-none">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-typing-dot" style={{ animationDelay: '0ms' }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-typing-dot" style={{ animationDelay: '150ms' }} />
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/60 animate-typing-dot" style={{ animationDelay: '300ms' }} />
+                    </div>
                 </div>
             )}
             <div ref={chatEndRef} />
@@ -687,43 +798,60 @@ export const InterviewPage = () => {
                                 </div>
                             ) : (
                                 /* AI Cam - default view */
-                                <div className="flex-1 relative bg-gradient-to-b from-[#0a0a0a] to-black border border-white/10 rounded-lg overflow-hidden flex items-center justify-center">
-                                    <div className="text-center">
-                                        <div className={`w-24 h-24 mx-auto rounded-full overflow-hidden border mb-4 bg-zinc-900 flex items-center justify-center relative transition-all ${isSpeaking ? 'border-emerald-500/50 shadow-lg shadow-emerald-500/20' : 'border-white/10'}`}>
-                                            <div className={`absolute inset-0 ${isSpeaking ? 'bg-emerald-500/20 animate-pulse' : 'bg-blue-500/10'}`} />
-                                            <Bot size={48} className="text-white/80 relative z-10" />
-                                        </div>
-                                        <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border transition-all ${isSpeaking ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : isRecording ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'text-white/30 border-white/5'}`}>
-                                            <span className={`w-1.5 h-1.5 rounded-full ${isSpeaking ? 'bg-emerald-400 animate-pulse' : isRecording ? 'bg-blue-400 animate-pulse' : 'bg-white/20'}`} />
-                                            {isSpeaking ? 'AI Speaking...' : isRecording ? 'Listening...' : 'Ready'}
-                                        </div>
-                                        <p className="text-xs text-white/40 mt-3">Technical Interview</p>
-                                    </div>
-                                    <div className="absolute bottom-3 left-3 bg-black/70 px-2 py-1 rounded text-xs text-white/60">AI Interviewer</div>
+                                <div className="flex-1 relative flex">
+                                    <AIInterviewerAvatar
+                                        isSpeaking={isSpeaking}
+                                        isListening={isRecording}
+                                        isProcessing={isLoading}
+                                        interviewType={interviewType}
+                                        audioRef={audioRef}
+                                    />
+                                    {isSpeaking && (
+                                        <button
+                                            onClick={stopSpeaking}
+                                            className="absolute top-4 right-4 z-20 px-3 py-1.5 bg-black/60 hover:bg-black/80 text-white/85 hover:text-white border border-white/10 hover:border-white/20 rounded-lg text-xs backdrop-blur-sm shadow-xl flex items-center gap-1.5 transition-all glow-hover"
+                                            title="Skip voice response (Esc)"
+                                        >
+                                            <Square size={10} className="fill-white" />
+                                            <span>Skip Voice</span>
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>
                     </div>
 
                     {/* Controls Bar - Fixed at Bottom */}
-                    <div className="h-16 shrink-0 flex items-center justify-center gap-4 border-t border-white/5">
+                    <div className="h-16 shrink-0 flex items-center justify-center gap-4 border-t border-white/5 bg-black/20 backdrop-blur-md">
                         {voiceMode ? (
-                            <>
-                                <button
-                                    onClick={handleStartRecording}
-                                    disabled={isRecording}
-                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${isRecording ? 'bg-white/5 text-white/20' : 'bg-white/10 text-white hover:bg-white/15 border border-white/10'}`}
-                                >
-                                    <Mic size={20} />
-                                </button>
-                                <button
-                                    onClick={stopRecording}
-                                    disabled={!isRecording}
-                                    className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${!isRecording ? 'bg-white/5 text-white/20' : 'bg-white/10 text-white hover:bg-white/15 border border-white/10'}`}
-                                >
-                                    <Square size={16} />
-                                </button>
-                            </>
+                            <div className="flex items-center gap-6">
+                                <div className="relative">
+                                    <button
+                                        onClick={() => {
+                                            if (isRecording) {
+                                                stopRecording();
+                                            } else {
+                                                handleStartRecording();
+                                            }
+                                        }}
+                                        className={`w-14 h-14 rounded-full flex flex-col items-center justify-center transition-all relative ${
+                                            isRecording
+                                                ? 'bg-red-500/20 text-red-400 border border-red-500/40'
+                                                : 'bg-white/5 text-white/80 hover:bg-white/10 border border-white/10 hover:border-white/20'
+                                        }`}
+                                        title={isRecording ? 'Click to stop and send (or release Spacebar)' : 'Click to record / Hold Spacebar to speak'}
+                                    >
+                                        {isRecording ? <Square size={18} className="fill-red-400" /> : <Mic size={20} />}
+                                        
+                                        {isRecording && (
+                                            <span className="absolute inset-0 rounded-full border-2 border-red-500/50 animate-ping opacity-75" />
+                                        )}
+                                    </button>
+                                    <span className="absolute left-1/2 -translate-x-1/2 -bottom-6 text-[9px] text-white/40 whitespace-nowrap select-none">
+                                        {isRecording ? 'Click to Send' : 'Hold Space to Talk'}
+                                    </span>
+                                </div>
+                            </div>
                         ) : (
                             <div className="flex items-center gap-2 text-xs text-white/40">
                                 <MicOff size={16} />
@@ -732,6 +860,17 @@ export const InterviewPage = () => {
                         )}
 
                         <div className="w-px h-8 bg-white/10 mx-2" />
+
+                        {isSpeaking && (
+                            <button
+                                onClick={stopSpeaking}
+                                className="px-4 py-2 text-xs bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 hover:border-white/20 rounded-full flex items-center gap-1.5 transition-all"
+                                title="Skip voice response (Esc)"
+                            >
+                                <Square size={10} className="fill-white" />
+                                <span>Skip Voice</span>
+                            </button>
+                        )}
 
                         <button
                             onClick={toggleVoiceMode}

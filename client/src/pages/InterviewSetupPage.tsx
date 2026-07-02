@@ -19,6 +19,14 @@ export const InterviewSetupPage = () => {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState('');
 
+    useState(() => {
+        const prefill = localStorage.getItem('prefill_focus_topic');
+        if (prefill) {
+            setInstructionPrompt(`Focus on improving my weak areas: ${prefill}`);
+            localStorage.removeItem('prefill_focus_topic');
+        }
+    });
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
             setReferenceFile(e.target.files[0]);

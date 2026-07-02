@@ -42,6 +42,7 @@ export const useElevenLabs = () => {
             globalAudio.src = '';
             globalAudio = null;
         }
+        audioRef.current = null;
         isPlayingLock = false;
         setIsSpeaking(false);
     }, []);
@@ -195,7 +196,10 @@ export const useElevenLabs = () => {
         }
     };
 
-    // Play TTS response - with lock to prevent duplicates
+    // Play TTS response — streaming playback for low latency
+    // Reads chunks from the ElevenLabs stream progressively instead of
+    // waiting for the full blob. Starts playback after a small initial
+    // buffer (~8 KB) so the user hears audio within ~1-2 s.
     const playResponse = useCallback(async (text: string) => {
         if (!getElevenLabsApiKey()) {
             console.error('ElevenLabs API key is missing.');
@@ -248,28 +252,115 @@ export const useElevenLabs = () => {
                 return;
             }
 
-            // Get audio blob and play it
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
+            // ── Streaming playback ──
+            // Read chunks from the response stream and accumulate them.
+            // Start playback as soon as we have a small initial buffer
+            // so the user hears audio almost immediately.
+            const reader = response.body?.getReader();
+            if (!reader) {
+                // Fallback: no readable stream (old browser) — use blob approach
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const audio = new Audio(url);
+                globalAudio = audio;
+                audioRef.current = audio;
+                audio.onended = () => { URL.revokeObjectURL(url); globalAudio = null; audioRef.current = null; setIsSpeaking(false); isPlayingLock = false; };
+                audio.onerror = () => { URL.revokeObjectURL(url); globalAudio = null; audioRef.current = null; setIsSpeaking(false); isPlayingLock = false; };
+                await audio.play();
+                return;
+            }
 
-            const audio = new Audio(url);
-            globalAudio = audio;
+            const chunks: BlobPart[] = [];
+            let totalBytes = 0;
+            let playbackStarted = false;
+            const INITIAL_BUFFER_SIZE = 8192; // ~8 KB — enough for first ~0.5 s of audio
 
-            audio.onended = () => {
-                URL.revokeObjectURL(url);
-                globalAudio = null;
-                setIsSpeaking(false);
-                isPlayingLock = false;
+            const startPlayback = () => {
+                if (playbackStarted) return;
+                playbackStarted = true;
+
+                const fullBlob = new Blob(chunks, { type: 'audio/mpeg' });
+                const url = URL.createObjectURL(fullBlob);
+                const audio = new Audio(url);
+                globalAudio = audio;
+                audioRef.current = audio;
+
+                audio.onended = () => {
+                    URL.revokeObjectURL(url);
+                    globalAudio = null;
+                    audioRef.current = null;
+                    setIsSpeaking(false);
+                    isPlayingLock = false;
+                };
+                audio.onerror = () => {
+                    URL.revokeObjectURL(url);
+                    globalAudio = null;
+                    audioRef.current = null;
+                    setIsSpeaking(false);
+                    isPlayingLock = false;
+                };
+
+                audio.play().catch(() => {
+                    // Playback failed (e.g. partial data) — will retry with full blob
+                    playbackStarted = false;
+                });
             };
 
-            audio.onerror = () => {
-                URL.revokeObjectURL(url);
-                globalAudio = null;
-                setIsSpeaking(false);
-                isPlayingLock = false;
-            };
+            // Read the stream
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (!value) continue;
 
-            await audio.play();
+                chunks.push(value);
+                totalBytes += value.byteLength;
+
+                // Start playback early once we have enough data
+                if (!playbackStarted && totalBytes >= INITIAL_BUFFER_SIZE) {
+                    startPlayback();
+                }
+            }
+
+            // Stream finished — if we haven't started playback yet (very short response), do it now
+            // Also re-create with the complete blob for full fidelity
+            if (!playbackStarted) {
+                startPlayback();
+            } else {
+                // Replace audio source with the complete blob for glitch-free playback
+                const completeBlob = new Blob(chunks, { type: 'audio/mpeg' });
+                const completeUrl = URL.createObjectURL(completeBlob);
+                const currentAudio = globalAudio;
+
+                if (currentAudio && !currentAudio.ended) {
+                    const currentTime = currentAudio.currentTime;
+                    const wasPlaying = !currentAudio.paused;
+                    
+                    currentAudio.onended = null;
+                    currentAudio.onerror = null;
+
+                    const freshAudio = new Audio(completeUrl);
+                    globalAudio = freshAudio;
+                    audioRef.current = freshAudio;
+
+                    freshAudio.onended = () => {
+                        URL.revokeObjectURL(completeUrl);
+                        globalAudio = null;
+                        audioRef.current = null;
+                        setIsSpeaking(false);
+                        isPlayingLock = false;
+                    };
+                    freshAudio.onerror = () => {
+                        URL.revokeObjectURL(completeUrl);
+                        globalAudio = null;
+                        audioRef.current = null;
+                        setIsSpeaking(false);
+                        isPlayingLock = false;
+                    };
+
+                    freshAudio.currentTime = currentTime;
+                    if (wasPlaying) freshAudio.play().catch(() => {});
+                }
+            }
 
         } catch (err: any) {
             console.error('TTS Error:', err);

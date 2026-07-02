@@ -5,6 +5,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
 import { Sparkles, Brain, Heart, Target, ChevronDown, ChevronUp } from 'lucide-react';
+import { SimpleMarkdown } from '../components/ui/SimpleMarkdown';
 
 export const ReportPage = () => {
     const { sessionId } = useParams();
@@ -15,6 +16,7 @@ export const ReportPage = () => {
     const [improvementPlan, setImprovementPlan] = useState<any>(null);
     const [loadingPlan, setLoadingPlan] = useState(false);
     const [showPlan, setShowPlan] = useState(false);
+    const [expandedQuestions, setExpandedQuestions] = useState<Record<number, boolean>>({});
 
     useEffect(() => {
         fetchReport();
@@ -109,19 +111,121 @@ export const ReportPage = () => {
                         </button>
                     </div>
 
-                    {/* Score */}
-                    <GlassCard className="text-center p-8">
-                        <p className="text-[10px] uppercase tracking-widest text-white/30 mb-4">Overall Score</p>
-                        <div className="text-5xl font-light text-white/90 mb-2">
-                            {report.score || 0}/100
-                        </div>
-                        <p className="text-sm text-white/40">
-                            {report.score >= 80 ? 'Excellent Performance' :
-                                report.score >= 60 ? 'Good Job' :
-                                    report.score > 0 ? 'Keep Practicing' :
-                                        'Score pending...'}
-                        </p>
-                    </GlassCard>
+                    {/* Score & Skill Dimensions */}
+                    {(() => {
+                        const technical = report.feedback?.technicalAccuracy || 70;
+                        const communication = report.feedback?.communicationSkills || 70;
+                        const problemSolving = report.feedback?.problemSolving || 70;
+
+                        const center = 120;
+                        const radius = 80;
+                        const getCoordinates = (score: number, angle: number) => {
+                            const val = (score / 100) * radius;
+                            const x = center + val * Math.cos(angle);
+                            const y = center + val * Math.sin(angle);
+                            return { x, y };
+                        };
+
+                        const angles = [-Math.PI / 2, Math.PI / 6, 5 * Math.PI / 6];
+                        
+                        const p1 = getCoordinates(technical, angles[0]);
+                        const p2 = getCoordinates(communication, angles[1]);
+                        const p3 = getCoordinates(problemSolving, angles[2]);
+
+                        const gridPoints = [25, 50, 75, 100].map(level => {
+                            const pt1 = getCoordinates(level, angles[0]);
+                            const pt2 = getCoordinates(level, angles[1]);
+                            const pt3 = getCoordinates(level, angles[2]);
+                            return `${pt1.x},${pt1.y} ${pt2.x},${pt2.y} ${pt3.x},${pt3.y}`;
+                        });
+
+                        const lbl1 = getCoordinates(115, angles[0]);
+                        const lbl2 = getCoordinates(115, angles[1]);
+                        const lbl3 = getCoordinates(115, angles[2]);
+
+                        return (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Overall Score */}
+                                <GlassCard className="text-center p-8 flex flex-col justify-center items-center">
+                                    <p className="text-[10px] uppercase tracking-widest text-white/30 mb-4">Overall Score</p>
+                                    <div className="text-6xl font-light text-white/90 mb-2">
+                                        {report.score || 0}<span className="text-sm text-white/40">/100</span>
+                                    </div>
+                                    <p className="text-sm text-white/50 mb-4">
+                                        {report.score >= 80 ? 'Excellent Performance' :
+                                            report.score >= 60 ? 'Good Job' :
+                                                report.score > 0 ? 'Keep Practicing' :
+                                                    'Score pending...'}
+                                    </p>
+                                    <div className="flex gap-4 mt-2">
+                                        <div className="text-center px-4 py-2 bg-white/5 rounded border border-white/5">
+                                            <div className="text-sm font-semibold text-emerald-400">{technical}</div>
+                                            <div className="text-[8px] text-white/40 uppercase">Tech</div>
+                                        </div>
+                                        <div className="text-center px-4 py-2 bg-white/5 rounded border border-white/5">
+                                            <div className="text-sm font-semibold text-cyan-400">{communication}</div>
+                                            <div className="text-[8px] text-white/40 uppercase">Comm</div>
+                                        </div>
+                                        <div className="text-center px-4 py-2 bg-white/5 rounded border border-white/5">
+                                            <div className="text-sm font-semibold text-purple-400">{problemSolving}</div>
+                                            <div className="text-[8px] text-white/40 uppercase">Problem</div>
+                                        </div>
+                                    </div>
+                                </GlassCard>
+
+                                {/* Radar Chart */}
+                                <GlassCard className="p-6 flex flex-col justify-center items-center">
+                                    <h3 className="text-xs font-medium text-white/50 uppercase tracking-wider mb-4">Skills Dimension</h3>
+                                    <svg width="240" height="240" className="overflow-visible">
+                                        {/* Grid Circles/Polygons */}
+                                        {gridPoints.map((points, idx) => (
+                                            <polygon
+                                                key={idx}
+                                                points={points}
+                                                fill="none"
+                                                stroke="rgba(255, 255, 255, 0.08)"
+                                                strokeWidth="1"
+                                            />
+                                        ))}
+                                        {/* Axes */}
+                                        {angles.map((angle, idx) => {
+                                            const end = getCoordinates(100, angle);
+                                            return (
+                                                <line
+                                                    key={idx}
+                                                    x1={center}
+                                                    y1={center}
+                                                    x2={end.x}
+                                                    y2={end.y}
+                                                    stroke="rgba(255, 255, 255, 0.1)"
+                                                    strokeWidth="1"
+                                                    strokeDasharray="2,2"
+                                                />
+                                            );
+                                        })}
+                                        {/* Labels */}
+                                        <text x={lbl1.x} y={lbl1.y} textAnchor="middle" alignmentBaseline="middle" className="text-[9px] fill-white/60 font-medium">Technical</text>
+                                        <text x={lbl2.x + 5} y={lbl2.y} textAnchor="start" alignmentBaseline="middle" className="text-[9px] fill-white/60 font-medium">Communication</text>
+                                        <text x={lbl3.x - 5} y={lbl3.y} textAnchor="end" alignmentBaseline="middle" className="text-[9px] fill-white/60 font-medium">Problem Solving</text>
+
+                                        {/* Scores Polygon */}
+                                        <polygon
+                                            points={`${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y}`}
+                                            fill="rgba(16, 185, 129, 0.15)"
+                                            stroke="rgba(16, 185, 129, 0.85)"
+                                            strokeWidth="2"
+                                            className="drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                                        />
+
+                                        {/* Interactive Dots */}
+                                        <circle cx={p1.x} cy={p1.y} r="3" fill="#10b981" />
+                                        <circle cx={p2.x} cy={p2.y} r="3" fill="#06b6d4" />
+                                        <circle cx={p3.x} cy={p3.y} r="3" fill="#a855f7" />
+                                    </svg>
+                                </GlassCard>
+                            </div>
+                        );
+                    })()}
 
                     {/* Emotional Analysis */}
                     {emotionalAnalysis && (emotionalAnalysis.dominantEmotions?.length > 0 || emotionalAnalysis.stressPoints > 0) && (
@@ -362,6 +466,66 @@ export const ReportPage = () => {
                         )}
                     </GlassCard>
 
+                    {/* Per-Question Analysis */}
+                    {report.feedback?.questionAnalysis && report.feedback.questionAnalysis.length > 0 && (
+                        <GlassCard className="p-5">
+                            <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">Question-by-Question Analysis</h3>
+                            <div className="space-y-4">
+                                {report.feedback.questionAnalysis.map((item: any, i: number) => {
+                                    const isExpanded = !!expandedQuestions[i];
+                                    const itemScore = item.score ?? 70;
+                                    const scoreColor = itemScore >= 80 ? 'text-green-400 border-green-500/25 bg-green-500/5' :
+                                                       itemScore >= 60 ? 'text-yellow-400 border-yellow-500/25 bg-yellow-500/5' :
+                                                       'text-red-400 border-red-500/25 bg-red-500/5';
+                                    return (
+                                        <div key={i} className="border border-white/5 rounded-lg overflow-hidden bg-white/2">
+                                            <button
+                                                onClick={() => {
+                                                    setExpandedQuestions(prev => ({
+                                                        ...prev,
+                                                        [i]: !prev[i]
+                                                    }));
+                                                }}
+                                                className="w-full flex items-center justify-between p-4 text-left hover:bg-white/5 transition-all gap-4"
+                                            >
+                                                <div className="flex-1">
+                                                    <span className="text-[9px] uppercase tracking-wider text-white/30">Question {i + 1}</span>
+                                                    <h4 className="text-xs font-medium text-white/80 line-clamp-1 mt-0.5">{item.question}</h4>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <span className={`px-2 py-0.5 text-xs rounded border ${scoreColor}`}>
+                                                        {itemScore}/100
+                                                    </span>
+                                                    {isExpanded ? <ChevronUp size={16} className="text-white/40" /> : <ChevronDown size={16} className="text-white/40" />}
+                                                </div>
+                                            </button>
+                                            {isExpanded && (
+                                                <div className="p-4 border-t border-white/5 bg-black/40 space-y-3">
+                                                    <div>
+                                                        <span className="text-[9px] uppercase tracking-wider text-white/30">Question</span>
+                                                        <p className="text-xs text-white/80 mt-1">{item.question}</p>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[9px] uppercase tracking-wider text-white/30">Your Answer</span>
+                                                        <p className="text-xs text-white/70 mt-1 whitespace-pre-wrap bg-white/5 p-2.5 rounded border border-white/5">{item.answer || '(No response provided)'}</p>
+                                                    </div>
+                                                    {item.feedback && (
+                                                        <div>
+                                                            <span className="text-[9px] uppercase tracking-wider text-white/30">AI Feedback</span>
+                                                            <div className="text-xs text-white/80 mt-1 border-l-2 border-emerald-500 pl-3 py-0.5">
+                                                                <SimpleMarkdown text={item.feedback} />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </GlassCard>
+                    )}
+
                     {/* Transcript */}
                     {report.transcript?.length > 0 && (
                         <GlassCard className="p-5">
@@ -378,7 +542,7 @@ export const ReportPage = () => {
                                                 : 'bg-white/5 text-white/60'
                                             }`}
                                         >
-                                            {msg.text}
+                                            <SimpleMarkdown text={msg.text} />
                                         </div>
                                     </div>
                                 ))}
@@ -387,17 +551,36 @@ export const ReportPage = () => {
                     )}
 
                     {/* Actions */}
-                    <div className="flex gap-4 justify-center pt-4">
-                        <button onClick={() => navigate('/resumes')} className="btn-primary text-sm">
-                            New Interview
-                        </button>
-                        <button
-                            onClick={() => window.print()}
-                            className="btn-secondary text-sm"
-                        >
-                            Print Report
-                        </button>
-                    </div>
+                    {(() => {
+                        const handlePracticeWeakAreas = () => {
+                            const improvements = report.feedback?.improvements || [];
+                            const focusTopic = improvements.slice(0, 2).join(', ');
+                            localStorage.setItem('prefill_focus_topic', focusTopic);
+                            navigate('/resumes');
+                        };
+
+                        return (
+                            <div className="flex gap-4 justify-center pt-4">
+                                {report.feedback?.improvements?.length > 0 && (
+                                    <button 
+                                        onClick={handlePracticeWeakAreas} 
+                                        className="btn-primary text-sm bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-medium border-0 hover:opacity-90 transition-all cursor-pointer"
+                                    >
+                                        Practice Weak Areas
+                                    </button>
+                                )}
+                                <button onClick={() => navigate('/resumes')} className="btn-secondary text-sm">
+                                    New Interview
+                                </button>
+                                <button
+                                    onClick={() => window.print()}
+                                    className="btn-secondary text-sm"
+                                >
+                                    Print Report
+                                </button>
+                            </div>
+                        );
+                    })()}
                 </div>
             </main>
         </div>

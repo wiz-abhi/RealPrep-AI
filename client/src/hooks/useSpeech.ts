@@ -41,6 +41,7 @@ export const useSpeech = () => {
             stopRecording: azureSpeech.stopListening,
             playResponse: azureSpeech.playResponse,
             stopSpeaking: azureSpeech.stopSpeaking,
+            audioRef: (azureSpeech as any).audioRef || { current: null },
             provider: 'azure' as const
         };
     }
@@ -56,6 +57,7 @@ export const useSpeech = () => {
         stopRecording: elevenLabs.stopRecording,
         playResponse: elevenLabs.playResponse,
         stopSpeaking: elevenLabs.stopSpeaking,
+        audioRef: elevenLabs.audioRef,
         provider: 'elevenlabs' as const
     };
 };
