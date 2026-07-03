@@ -1,23 +1,29 @@
 import { Request, Response } from 'express';
-import { GeminiService } from '../services/gemini';
-import { RAGService } from '../services/rag';
 import prisma from '../db';
 import { v4 as uuidv4 } from 'uuid';
-const pdfParse = require('pdf-parse');
 
-const gemini = new GeminiService();
-
+/**
+ * POST /api/resume/upload
+ * Authenticated. Parses PDF/text resume content, stores the full text in
+ * Resume.content (RAG chunking removed — see project_sarvam_migration).
+ */
 export const uploadResume = async (req: Request, res: Response) => {
     try {
-        const { content, userId, fileType, fileName, temporary } = req.body;
+        const userId = req.userId;
+        if (!userId) return res.status(401).json({ error: 'Not authenticated' });
 
-        let textContent = content;
+        const { content, fileType, fileName, temporary } = req.body || {};
+        if (!content) return res.status(400).json({ error: 'Missing content' });
 
-        // Handle PDF files (base64 encoded)
+        let textContent: string = content;
+
         if (fileType === 'application/pdf') {
             try {
+                // pdf-parse is CJS — require to avoid ESM interop issues.
                 const pdfParse = require('pdf-parse');
-                const base64Data = content.split(',')[1] || content;
+                const base64Data = String(content).includes(',')
+                    ? String(content).split(',')[1]
+                    : String(content);
                 const pdfBuffer = Buffer.from(base64Data, 'base64');
                 const pdfData = await pdfParse(pdfBuffer);
                 textContent = pdfData.text;
@@ -31,64 +37,66 @@ export const uploadResume = async (req: Request, res: Response) => {
             }
         }
 
-        // Calculate expiry - 2 hours from now for temporary resumes
-        const expiresAt = temporary ? new Date(Date.now() + 2 * 60 * 60 * 1000) : null;
+        // Cap resume text at ~40KB to keep DB rows sane. Well above a typical resume.
+        if (textContent.length > 40000) {
+            textContent = textContent.slice(0, 40000);
+        }
 
-        // Store in DB (only metadata, NOT full content)
+        const expiresAt = temporary
+            ? new Date(Date.now() + 2 * 60 * 60 * 1000)
+            : null;
+
         const resumeId = uuidv4();
         const resume = await prisma.resume.create({
             data: {
                 id: resumeId,
-                userId: userId || 'mock-user-id',
-                content: '', // Empty - we only store chunks
+                userId,
+                content: textContent, // ← Full resume text now inlined (Sarvam migration)
                 fileUrl: fileName || 'uploaded-resume',
-                skills: [], // Will be populated during interview start
-                temporary: temporary || false,
-                expiresAt: expiresAt
-            }
+                skills: [], // populated lazily on interview start
+                temporary: !!temporary,
+                expiresAt,
+            },
         });
-
-        // Only do RAG Ingestion (chunking + indexing)
-        await RAGService.ingestResume(resume.id, textContent);
 
         res.json({
             success: true,
             data: {
                 id: resume.id,
-                skills: ['Analyzing...'], // Placeholder for UI
-                message: 'Resume indexed successfully',
-                temporary: temporary || false
-            }
+                skills: ['Analyzing...'],
+                message: 'Resume stored successfully',
+                temporary: !!temporary,
+            },
         });
-
     } catch (error) {
         console.error('Resume upload error:', error);
         res.status(500).json({ error: 'Failed to process resume' });
     }
 };
 
-// Cleanup expired temporary resumes
+/**
+ * Background task — deletes temporary resumes past their expiry.
+ * Also clears any legacy ResumeChunk rows tied to them (safe no-op for
+ * new uploads since chunks are no longer written).
+ */
 export const cleanupExpiredResumes = async () => {
     try {
         const expiredResumes = await prisma.resume.findMany({
             where: {
                 temporary: true,
-                expiresAt: {
-                    lte: new Date()
-                }
+                expiresAt: { lte: new Date() },
             },
-            select: { id: true }
+            select: { id: true },
         });
 
         for (const resume of expiredResumes) {
-            // Delete chunks first
-            await prisma.resumeChunk.deleteMany({
-                where: { resumeId: resume.id }
-            });
-            // Then delete resume
-            await prisma.resume.delete({
-                where: { id: resume.id }
-            });
+            try {
+                await prisma.resumeChunk.deleteMany({ where: { resumeId: resume.id } });
+            } catch (err) {
+                // Chunks table may be gone in a future migration — non-fatal.
+                console.warn('resumeChunk deleteMany warning:', err);
+            }
+            await prisma.resume.delete({ where: { id: resume.id } });
         }
 
         if (expiredResumes.length > 0) {

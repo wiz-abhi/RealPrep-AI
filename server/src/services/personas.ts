@@ -1,128 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import dotenv from 'dotenv';
-dotenv.config();
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
-export class GeminiService {
-    private model: any;
-    private modelName: string;
-
-    constructor(modelName: string = 'gemini-2.5-flash-lite') {
-        this.modelName = modelName;
-        this.model = genAI.getGenerativeModel({ model: modelName });
-    }
-
-    private async retryOperation<T>(operation: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
-        try {
-            return await operation();
-        } catch (error: any) {
-            const isRateLimit = error.status === 429 || error.message?.includes('429') || error.message?.includes('usage');
-            const isOverloaded = error.status === 503 || error.message?.includes('503') || error.message?.includes('overloaded');
-
-            if (retries > 0 && (isRateLimit || isOverloaded)) {
-                const waitTime = isRateLimit ? Math.max(delay, 10000) : delay;
-                console.warn(`Gemini API ${isRateLimit ? '429 Rate Limit' : '503 Overloaded'}. Retrying in ${waitTime}ms... (${retries} retries left)`);
-                await new Promise(resolve => setTimeout(resolve, waitTime));
-                return this.retryOperation(operation, retries - 1, waitTime * 2);
-            }
-            throw error;
-        }
-    }
-
-    // Standard chat without system instruction
-    async generateResponse(history: { role: string; parts: string }[], input: string) {
-        const chat = this.model.startChat({
-            history: history.map(h => ({
-                role: h.role,
-                parts: [{ text: h.parts }],
-            })),
-        });
-
-        const result = await this.retryOperation(() => chat.sendMessage(input)) as any;
-        const response = await result.response;
-        return response.text();
-    }
-
-    // Chat with system instruction for interviewer persona
-    async generateInterviewResponse(
-        systemInstruction: string,
-        history: { role: string; parts: string }[],
-        input: string,
-        customApiKey?: string  // Optional user-provided API key
-    ) {
-        // Use custom API key if provided, otherwise use default
-        const ai = customApiKey
-            ? new GoogleGenerativeAI(customApiKey)
-            : genAI;
-
-        // Create model with system instruction
-        const model = ai.getGenerativeModel({
-            model: this.modelName,
-            systemInstruction: systemInstruction
-        });
-
-        const chat = model.startChat({
-            history: history.map(h => ({
-                role: h.role,
-                parts: [{ text: h.parts }],
-            })),
-        });
-
-        const result = await this.retryOperation(() => chat.sendMessage(input)) as { response: { text: () => string } };
-        const response = await result.response;
-        return response.text();
-    }
-
-    // Generate initial interview greeting (AI speaks first)
-    async generateInitialGreeting(systemInstruction: string, context: string) {
-        const model = genAI.getGenerativeModel({
-            model: this.modelName,
-            systemInstruction: systemInstruction
-        });
-
-        const prompt = `Based on this candidate context, generate your opening greeting:
-
-${context}
-
-IMPORTANT INSTRUCTIONS:
-1. Greet the candidate by their name (from context above)
-2. Introduce yourself as the interviewer (use your persona name from system instructions)
-3. Ask the candidate to introduce themselves, their areas of expertise, and anything they want you to know about them
-4. Keep it warm, professional, and conversational
-5. Do NOT use any markdown formatting - this will be spoken aloud
-
-Example structure (adapt to your persona):
-"Hi [Name]! I'm [Your Name], and I'll be your interviewer today. Before we dive in, I'd love to hear a bit about you. Could you introduce yourself and tell me about your areas of expertise and anything you think would be helpful for me to know?"`;
-
-        const result = await this.retryOperation(() => model.generateContent(prompt)) as { response: { text: () => string } };
-        return result.response.text();
-    }
-
-    async analyzeResume(resumeText: string) {
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-        const prompt = `Analyze this resume and extract key skills, strengths, and weaknesses as JSON: ${resumeText}`;
-        const result = await this.retryOperation(() => model.generateContent(prompt)) as { response: { text: () => string } };
-        const text = result.response.text();
-        return text.replace(/```json|```/g, '');
-    }
-
-    async generateEmbedding(text: string): Promise<number[]> {
-        // Using gemini-embedding-001 which outputs 768 dimensions by default
-        // This matches the vector(768) column in the database schema
-        const model = genAI.getGenerativeModel({ model: "gemini-embedding-001" });
-        const result = await this.retryOperation(() => model.embedContent(text)) as { embedding: { values: number[] } };
-        return result.embedding.values;
-    }
-
-    async generateText(prompt: string): Promise<string> {
-        const result = await this.retryOperation(() => this.model.generateContent(prompt)) as any;
-        const text = result.response.text();
-        return text.replace(/```json|```/g, '');
-    }
-}
-
 // Interviewer System Instructions with Structured Phases
+// Extracted from the old gemini.ts — this is prompt content, not model-specific.
 export const INTERVIEWER_PERSONAS = {
     technical: `You are Friday, a Senior Technical Interviewer at a top tech company with 10+ years of experience.
 
@@ -139,7 +16,7 @@ DEFAULT INTERVIEW PHASES (Use ONLY if no specific focus is requested):
 4. BEHAVIORAL (2 questions): Ask about teamwork, challenges, conflict resolution using STAR method
 5. WRAP-UP (1 question): Ask if they have questions, give closing remarks
 
-⚠️ IMPORTANT: If the candidate requests a specific focus (e.g., "only DSA questions" or "coding practice only"), 
+⚠️ IMPORTANT: If the candidate requests a specific focus (e.g., "only DSA questions" or "coding practice only"),
 SKIP the default phases and jump DIRECTLY to what they asked for. Their request takes priority.
 
 CODING QUESTIONS FORMAT:
@@ -285,3 +162,5 @@ RULES:
 - Suggest considering scale, reliability, cost
 - Don't use markdown formatting — this will be spoken aloud`
 };
+
+export type InterviewPersonaKey = keyof typeof INTERVIEWER_PERSONAS;

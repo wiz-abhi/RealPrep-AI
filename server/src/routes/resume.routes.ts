@@ -5,7 +5,7 @@ import { authenticateToken } from '../middleware/auth.middleware';
 
 const router = Router();
 
-router.post('/upload', uploadResume);
+router.post('/upload', authenticateToken, uploadResume);
 router.get('/list', authenticateToken, listResumes);
 router.delete('/:resumeId', authenticateToken, deleteResume);
 

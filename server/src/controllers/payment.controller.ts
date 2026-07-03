@@ -1,9 +1,7 @@
 import { Request, Response } from 'express';
 import Razorpay from 'razorpay';
-import crypto from 'crypto';
 import { prisma } from '../db';
-
-const CREDITS_PER_RUPEE = 2;
+import { verifyRazorpaySignature, creditsForPaise, CREDITS_PER_RUPEE } from '../utils/payment';
 
 let razorpayInstance: Razorpay | null = null;
 function getRazorpay() {
@@ -19,11 +17,7 @@ function getRazorpay() {
 // Create a Razorpay order
 export const createOrder = async (req: Request, res: Response) => {
     try {
-        const { amount } = req.body; // amount in INR (rupees)
-
-        if (!amount || typeof amount !== 'number' || amount < 1) {
-            return res.status(400).json({ error: 'Amount must be at least ₹1' });
-        }
+        const { amount } = req.body; // amount in INR (rupees), validated by Zod
 
         const credits = amount * CREDITS_PER_RUPEE;
 
@@ -56,31 +50,47 @@ export const createOrder = async (req: Request, res: Response) => {
 // Verify payment and credit the user
 export const verifyPayment = async (req: Request, res: Response) => {
     try {
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature, amount } = req.body;
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-            return res.status(400).json({ error: 'Missing payment details' });
-        }
-
-        // Verify signature
-        const body = razorpay_order_id + '|' + razorpay_payment_id;
-        const expectedSignature = crypto
-            .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
-            .update(body)
-            .digest('hex');
-
-        if (expectedSignature !== razorpay_signature) {
+        if (!verifyRazorpaySignature(
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+            process.env.RAZORPAY_KEY_SECRET!
+        )) {
             return res.status(400).json({ error: 'Invalid payment signature' });
         }
 
-        // Calculate credits from the amount (amount is in rupees)
-        const credits = (amount || 0) * CREDITS_PER_RUPEE;
+        // Credits come from the ORDER as recorded server-side — never from the
+        // client body (a client could otherwise pay ₹1 and claim ₹1000).
+        const order: any = await getRazorpay().orders.fetch(razorpay_order_id);
 
+        if (!order) {
+            return res.status(400).json({ error: 'Order not found' });
+        }
+        if (order.notes?.userId && order.notes.userId !== req.userId) {
+            return res.status(403).json({ error: 'Order belongs to a different user' });
+        }
+
+        const credits = creditsForPaise(Number(order.amount));
         if (credits <= 0) {
             return res.status(400).json({ error: 'Invalid credit amount' });
         }
 
-        // Add credits to user
+        // Idempotency: refuse to credit the same payment twice.
+        const alreadyCredited = order.notes?.credited === 'true';
+        if (alreadyCredited) {
+            return res.status(409).json({ error: 'Payment already credited' });
+        }
+        try {
+            await getRazorpay().orders.edit(razorpay_order_id, {
+                notes: { ...order.notes, credited: 'true', paymentId: razorpay_payment_id }
+            });
+        } catch (e) {
+            // Notes update is best-effort; log but don't block crediting.
+            console.warn('Failed to mark order as credited:', e);
+        }
+
         const user = await prisma.user.update({
             where: { id: req.userId },
             data: { credits: { increment: credits } },

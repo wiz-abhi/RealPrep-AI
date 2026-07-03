@@ -23,6 +23,9 @@ export const useAzureSpeech = () => {
     const recognizerRef = useRef<sdk.SpeechRecognizer | null>(null);
     const synthesizerRef = useRef<sdk.SpeechSynthesizer | null>(null);
     const playerRef = useRef<sdk.SpeakerAudioDestination | null>(null);
+    // Resolver of the currently-playing TTS promise. stopSpeaking() calls this
+    // so the sentence-chunked TTS queue in InterviewPage advances instead of hanging.
+    const pendingTTSResolveRef = useRef<(() => void) | null>(null);
 
     // Accumulate all recognized segments
     const accumulatedTranscriptRef = useRef<string>('');
@@ -36,7 +39,7 @@ export const useAzureSpeech = () => {
             setError(null);
             setTranscript('');
             setInterimTranscript('');
-            accumulatedTranscriptRef.current = ''; // Reset accumulator
+            accumulatedTranscriptRef.current = '';
 
             const config = getAzureConfig();
             if (!config.key) {
@@ -44,26 +47,17 @@ export const useAzureSpeech = () => {
                 return;
             }
 
-            console.log('Starting Azure continuous recognition...');
-
             const speechConfig = sdk.SpeechConfig.fromSubscription(config.key, config.region);
             speechConfig.speechRecognitionLanguage = 'en-US';
-
-            // Increase silence timeout to allow for longer pauses
-            speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "2000");
+            speechConfig.setProperty(sdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, '2000');
 
             const audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
             const recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
             recognizerRef.current = recognizer;
 
-            // Handle real-time partial results (streaming)
             recognizer.recognizing = (_, e) => {
                 if (e.result.reason === sdk.ResultReason.RecognizingSpeech) {
-                    console.log('Partial:', e.result.text);
-                    // Show current accumulated + partial for real-time feedback
                     setInterimTranscript(accumulatedTranscriptRef.current + ' ' + e.result.text);
-
-                    // Clear auto-send timer while user is speaking
                     if (autoSendTimerRef.current) {
                         clearTimeout(autoSendTimerRef.current);
                         autoSendTimerRef.current = null;
@@ -71,11 +65,8 @@ export const useAzureSpeech = () => {
                 }
             };
 
-            // Handle final result - ACCUMULATE and start auto-send timer
             recognizer.recognized = (_, e) => {
                 if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
-                    console.log('Final segment:', e.result.text);
-                    // Accumulate all segments
                     if (e.result.text.trim()) {
                         accumulatedTranscriptRef.current =
                             accumulatedTranscriptRef.current
@@ -84,16 +75,11 @@ export const useAzureSpeech = () => {
                     }
                     setInterimTranscript(accumulatedTranscriptRef.current);
 
-                    // Start auto-send timer - if no more speech for 3 seconds, send the transcript
-                    if (autoSendTimerRef.current) {
-                        clearTimeout(autoSendTimerRef.current);
-                    }
+                    if (autoSendTimerRef.current) clearTimeout(autoSendTimerRef.current);
                     autoSendTimerRef.current = setTimeout(() => {
                         if (accumulatedTranscriptRef.current.trim()) {
-                            console.log('Auto-sending after pause:', accumulatedTranscriptRef.current);
                             setTranscript(accumulatedTranscriptRef.current.trim());
                             setInterimTranscript('');
-                            // Stop recognition after auto-send
                             if (recognizerRef.current) {
                                 recognizerRef.current.stopContinuousRecognitionAsync(() => {
                                     recognizerRef.current?.close();
@@ -102,9 +88,7 @@ export const useAzureSpeech = () => {
                                 }, () => { });
                             }
                         }
-                    }, 1000); // Reduced to 1s for faster response
-                } else if (e.result.reason === sdk.ResultReason.NoMatch) {
-                    console.log('No speech recognized');
+                    }, 1000);
                 }
             };
 
@@ -118,24 +102,14 @@ export const useAzureSpeech = () => {
             };
 
             recognizer.sessionStopped = () => {
-                console.log('Recognition session stopped');
                 setIsRecording(false);
                 setIsProcessing(false);
             };
 
-            // Start continuous recognition
             await new Promise<void>((resolve, reject) => {
                 recognizer.startContinuousRecognitionAsync(
-                    () => {
-                        console.log('Continuous recognition started');
-                        setIsRecording(true);
-                        resolve();
-                    },
-                    (err) => {
-                        console.error('Failed to start recognition:', err);
-                        setError('Failed to start recording');
-                        reject(err);
-                    }
+                    () => { setIsRecording(true); resolve(); },
+                    (err) => { console.error('Failed to start recognition:', err); setError('Failed to start recording'); reject(err); }
                 );
             });
         } catch (err) {
@@ -145,26 +119,18 @@ export const useAzureSpeech = () => {
         }
     }, []);
 
-    // Stop listening - set final accumulated transcript
     const stopListening = useCallback(async () => {
         if (recognizerRef.current) {
-            console.log('Stopping continuous recognition...');
             setIsProcessing(true);
-
             await new Promise<void>((resolve) => {
                 recognizerRef.current!.stopContinuousRecognitionAsync(
                     () => {
-                        console.log('Recognition stopped');
                         recognizerRef.current?.close();
                         recognizerRef.current = null;
-
-                        // Set the final accumulated transcript
                         if (accumulatedTranscriptRef.current.trim()) {
-                            console.log('Final accumulated transcript:', accumulatedTranscriptRef.current);
                             setTranscript(accumulatedTranscriptRef.current.trim());
                         }
                         setInterimTranscript('');
-
                         setIsRecording(false);
                         setIsProcessing(false);
                         resolve();
@@ -180,84 +146,97 @@ export const useAzureSpeech = () => {
         }
     }, []);
 
-    // Stop speaking
     const stopSpeaking = useCallback(() => {
         if (synthesizerRef.current) {
-            synthesizerRef.current.close();
+            try { synthesizerRef.current.close(); } catch { /* noop */ }
             synthesizerRef.current = null;
         }
         if (playerRef.current) {
-            playerRef.current.pause();
-            playerRef.current.close();
+            try { playerRef.current.pause(); } catch { /* noop */ }
+            try { playerRef.current.close(); } catch { /* noop */ }
             playerRef.current = null;
         }
         setIsSpeaking(false);
+        // Resolve any pending TTS promise so a queued caller advances.
+        if (pendingTTSResolveRef.current) {
+            const resolve = pendingTTSResolveRef.current;
+            pendingTTSResolveRef.current = null;
+            resolve();
+        }
     }, []);
 
-    // Streaming TTS with SpeechSynthesizer
-    const playResponse = useCallback(async (text: string) => {
+    /**
+     * Plays a TTS chunk. Returns Promise<void> that resolves when Azure's
+     * SpeakerAudioDestination fires onAudioEnd, when speak is canceled/errored,
+     * or when stopSpeaking() is called mid-playback (barge-in / queue swap).
+     */
+    const playResponse = useCallback((text: string): Promise<void> => {
         const config = getAzureConfig();
-
         if (!config.key) {
             console.error('Azure Speech API key is missing');
-            return;
+            return Promise.resolve();
         }
+        if (!text.trim()) return Promise.resolve();
 
-        // Stop any previous speech
+        // Always cut off any prior playback — sequential awaited callers build the queue.
         stopSpeaking();
-
         setIsSpeaking(true);
 
-        try {
-            console.log('Starting streaming TTS...');
-
-            const speechConfig = sdk.SpeechConfig.fromSubscription(config.key, config.region);
-            speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural';
-            // Optimize output format for lower bandwidth/latency
-            speechConfig.speechSynthesisOutputFormat = sdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3;
-
-            // Create speaker output for streaming
-            const player = new sdk.SpeakerAudioDestination();
-            playerRef.current = player;
-
-            player.onAudioEnd = () => {
-                console.log('TTS playback finished');
-                setIsSpeaking(false);
-            };
-
-            const audioConfig = sdk.AudioConfig.fromSpeakerOutput(player);
-            const synthesizer = new sdk.SpeechSynthesizer(speechConfig, audioConfig);
-            synthesizerRef.current = synthesizer;
-
-            // Handle streaming events
-            synthesizer.synthesizing = (_s, e) => {
-                // Audio data is being streamed
-                console.log('TTS streaming chunk received:', e.result.audioData?.byteLength, 'bytes');
-            };
-
-            // Start streaming synthesis
-            synthesizer.speakTextAsync(
-                text,
-                (result) => {
-                    if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
-                        console.log('TTS synthesis completed');
-                    } else if (result.reason === sdk.ResultReason.Canceled) {
-                        const cancellation = sdk.CancellationDetails.fromResult(result);
-                        console.error('TTS canceled:', cancellation.reason, cancellation.errorDetails);
-                        setError(`TTS failed: ${cancellation.errorDetails}`);
-                        setIsSpeaking(false);
-                    }
-                },
-                (err) => {
-                    console.error('TTS error:', err);
-                    setError('TTS failed');
-                    setIsSpeaking(false);
+        return new Promise<void>((resolve) => {
+            let resolved = false;
+            const finish = () => {
+                if (resolved) return;
+                resolved = true;
+                if (pendingTTSResolveRef.current === resolve) {
+                    pendingTTSResolveRef.current = null;
                 }
-            );
-        } catch (err) {
-            console.error('TTS error:', err);
-            setIsSpeaking(false);
-        }
+                if (playerRef.current === player) {
+                    setIsSpeaking(false);
+                    playerRef.current = null;
+                    synthesizerRef.current = null;
+                }
+                resolve();
+            };
+
+            pendingTTSResolveRef.current = resolve;
+
+            let player: sdk.SpeakerAudioDestination;
+            try {
+                const speechConfig = sdk.SpeechConfig.fromSubscription(config.key, config.region);
+                speechConfig.speechSynthesisVoiceName = 'en-US-JennyNeural';
+                speechConfig.speechSynthesisOutputFormat =
+                    sdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3;
+
+                player = new sdk.SpeakerAudioDestination();
+                playerRef.current = player;
+                player.onAudioEnd = () => finish();
+
+                const audioConfig = sdk.AudioConfig.fromSpeakerOutput(player);
+                const synthesizer = new sdk.SpeechSynthesizer(speechConfig, audioConfig);
+                synthesizerRef.current = synthesizer;
+
+                synthesizer.speakTextAsync(
+                    text,
+                    (result) => {
+                        if (result.reason === sdk.ResultReason.Canceled) {
+                            const cancellation = sdk.CancellationDetails.fromResult(result);
+                            console.error('TTS canceled:', cancellation.reason, cancellation.errorDetails);
+                            setError(`TTS failed: ${cancellation.errorDetails}`);
+                            finish();
+                        }
+                        // Successful completion: wait for onAudioEnd instead of finishing here.
+                    },
+                    (err) => {
+                        console.error('TTS error:', err);
+                        setError('TTS failed');
+                        finish();
+                    }
+                );
+            } catch (err) {
+                console.error('TTS setup error:', err);
+                finish();
+            }
+        });
     }, [stopSpeaking]);
 
     return {

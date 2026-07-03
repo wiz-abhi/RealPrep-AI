@@ -14,6 +14,8 @@ import { HistoryPage } from './pages/HistoryPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { SettingsPage } from './pages/SettingsPage';
 import { FeaturesPage } from './pages/FeaturesPage';
@@ -25,7 +27,7 @@ import { RechargePage } from './pages/RechargePage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 // Public routes that don't need backend
-const PUBLIC_ROUTES = ['/', '/login', '/register', '/features', '/pricing'];
+const PUBLIC_ROUTES = ['/', '/login', '/register', '/features', '/pricing', '/forgot-password', '/reset-password'];
 
 // Inner app that checks backend status
 const AppContent = () => {
@@ -47,6 +49,8 @@ const AppContent = () => {
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/features" element={<FeaturesPage />} />
         <Route path="/pricing" element={<PricingPage />} />
 

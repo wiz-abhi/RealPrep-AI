@@ -50,7 +50,12 @@ export const LoginPage = () => {
                         />
                     </div>
                     <div>
-                        <label className="block text-xs uppercase tracking-wider text-white/30 mb-2">Password</label>
+                        <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs uppercase tracking-wider text-white/30">Password</label>
+                            <Link to="/forgot-password" className="text-[11px] text-white/30 hover:text-white/60 transition-colors">
+                                Forgot password?
+                            </Link>
+                        </div>
                         <input
                             type="password"
                             className="w-full bg-white/5 border border-white/10 rounded p-3 text-white focus:border-white/30 transition-colors outline-none text-sm"

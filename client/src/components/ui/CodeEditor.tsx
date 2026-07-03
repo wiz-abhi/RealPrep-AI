@@ -9,12 +9,23 @@ import 'prismjs/components/prism-java';
 import 'prismjs/components/prism-cpp';
 import 'prismjs/themes/prism-tomorrow.css';
 
+export interface ExecutionResult {
+    ran: boolean;
+    stdout?: string;
+    stderr?: string;
+    compileError?: string;
+    exitCode?: number | null;
+    timedOut?: boolean;
+    error?: string;
+}
+
 interface CodeEditorProps {
     language?: string;
     onCodeChange?: (code: string) => void;
     onSubmit?: (code: string, language: string) => Promise<void>;
     isSubmitting?: boolean;
     initialCode?: string;
+    executionResult?: ExecutionResult | null;
 }
 
 const LANGUAGE_MAP: Record<string, string> = {
@@ -86,7 +97,8 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     onCodeChange,
     onSubmit,
     isSubmitting = false,
-    initialCode
+    initialCode,
+    executionResult
 }) => {
     const [code, setCode] = useState(initialCode || BOILERPLATE[initialLanguage] || BOILERPLATE.javascript);
     const [language, setLanguage] = useState(initialLanguage);
@@ -189,6 +201,43 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                 )}
             </div>
 
+            {/* Execution Output Panel */}
+            {executionResult && (
+                <div className="max-h-40 overflow-auto border-t border-white/10 bg-[#161719] px-3 py-2 text-xs font-mono">
+                    {!executionResult.ran ? (
+                        <div className="text-yellow-400/80">
+                            ⚠ {executionResult.timedOut ? 'Execution timed out.' : `Could not run: ${executionResult.error || 'unknown error'}`}
+                        </div>
+                    ) : executionResult.compileError ? (
+                        <div>
+                            <div className="text-red-400 mb-1">✗ Compilation failed</div>
+                            <pre className="whitespace-pre-wrap text-red-300/90">{executionResult.compileError}</pre>
+                        </div>
+                    ) : (
+                        <div className="space-y-1">
+                            <div className={executionResult.exitCode === 0 ? 'text-green-400' : 'text-yellow-400'}>
+                                {executionResult.exitCode === 0 ? '✓ Ran successfully' : `Exited with code ${executionResult.exitCode}`}
+                            </div>
+                            {executionResult.stdout && executionResult.stdout.trim() && (
+                                <div>
+                                    <span className="text-gray-500">stdout:</span>
+                                    <pre className="whitespace-pre-wrap text-gray-200">{executionResult.stdout}</pre>
+                                </div>
+                            )}
+                            {executionResult.stderr && executionResult.stderr.trim() && (
+                                <div>
+                                    <span className="text-gray-500">stderr:</span>
+                                    <pre className="whitespace-pre-wrap text-red-300/90">{executionResult.stderr}</pre>
+                                </div>
+                            )}
+                            {!(executionResult.stdout || '').trim() && !(executionResult.stderr || '').trim() && (
+                                <div className="text-gray-500">(no output — add a print/console statement to see results)</div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* Footer */}
             <div className="p-2 bg-[#282a2e] border-t border-white/5 flex justify-between items-center">
                 <span className="text-xs text-gray-500">
@@ -210,7 +259,7 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
                     ) : (
                         <>
                             <span>▶</span>
-                            Submit to AI
+                            Run &amp; Submit
                         </>
                     )}
                 </button>

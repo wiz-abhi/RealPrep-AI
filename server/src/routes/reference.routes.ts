@@ -1,8 +1,9 @@
 import { Router } from 'express';
 import { uploadReference } from '../controllers/reference.controller';
+import { authenticateToken } from '../middleware/auth.middleware';
 
 const router = Router();
 
-router.post('/', uploadReference);
+router.post('/', authenticateToken, uploadReference);
 
 export default router;

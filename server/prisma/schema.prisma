@@ -75,3 +75,14 @@ model Transcript {
   text      String
   timestamp DateTime @default(now())
 }
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique // sha256 of the raw token (raw token only in the email)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}

@@ -3,7 +3,7 @@ import { API_BASE_URL } from '../config/api';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Webcam from 'react-webcam';
 import { GlassCard } from '../components/ui/GlassCard';
-import { Clock } from 'lucide-react';
+import { Clock, Mic } from 'lucide-react';
 
 export const PreJoinPage = () => {
     const location = useLocation();
@@ -17,57 +17,99 @@ export const PreJoinPage = () => {
     const [checks, setChecks] = useState([
         { id: 'init', label: 'Initializing AI process', status: 'pending' },
         { id: 'session', label: 'Creating interview session', status: 'pending' },
-        { id: 'env', label: 'Setting up environment', status: 'pending' },
         { id: 'camera', label: 'Camera permission', status: 'pending' },
-        { id: 'mic', label: 'Microphone permission', status: 'pending' },
-        { id: 'final', label: 'Finalizing setup', status: 'pending' }
+        { id: 'mic', label: 'Microphone — say something to test', status: 'pending' },
     ]);
 
     const [allChecksPassed, setAllChecksPassed] = useState(false);
     const [cameraReady, setCameraReady] = useState(false);
+    const [micLevel, setMicLevel] = useState(0);      // 0-100 live level
+    const [micHeard, setMicHeard] = useState(false);  // true once real sound detected
     const webcamRef = useRef<Webcam>(null);
+
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const micStreamRef = useRef<MediaStream | null>(null);
+    const rafRef = useRef<number>(0);
+    const micHeardRef = useRef(false);
 
     useEffect(() => {
         runChecks();
+        return () => {
+            // Release mic + audio context on unmount.
+            cancelAnimationFrame(rafRef.current);
+            micStreamRef.current?.getTracks().forEach(t => t.stop());
+            audioContextRef.current?.close().catch(() => { });
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const updateCheck = (id: string, status: 'running' | 'completed' | 'error') => {
         setChecks(prev => prev.map(c => c.id === id ? { ...c, status } : c));
     };
 
+    // Real mic test: analyse the live input; the check passes when actual
+    // sound is detected (user speaks / claps), not merely when permission is granted.
+    const startMicMeter = (stream: MediaStream) => {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioCtx();
+        audioContextRef.current = ctx;
+        const source = ctx.createMediaStreamSource(stream);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        const data = new Uint8Array(analyser.frequencyBinCount);
+
+        const tick = () => {
+            analyser.getByteTimeDomainData(data);
+            // RMS of the waveform, scaled to 0-100.
+            let sum = 0;
+            for (let i = 0; i < data.length; i++) {
+                const v = (data[i] - 128) / 128;
+                sum += v * v;
+            }
+            const rms = Math.sqrt(sum / data.length);
+            const level = Math.min(100, Math.round(rms * 300));
+            setMicLevel(level);
+
+            if (level > 12 && !micHeardRef.current) {
+                micHeardRef.current = true;
+                setMicHeard(true);
+                updateCheck('mic', 'completed');
+            }
+            rafRef.current = requestAnimationFrame(tick);
+        };
+        tick();
+    };
+
     const runChecks = async () => {
         updateCheck('init', 'running');
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 400));
         updateCheck('init', 'completed');
 
         updateCheck('session', 'running');
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 400));
         updateCheck('session', 'completed');
-
-        updateCheck('env', 'running');
-        await new Promise(r => setTimeout(r, 600));
-        updateCheck('env', 'completed');
 
         try {
             updateCheck('camera', 'running');
             updateCheck('mic', 'running');
-            await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+            micStreamRef.current = stream;
             updateCheck('camera', 'completed');
-            updateCheck('mic', 'completed');
             setCameraReady(true);
+            // Mic stays 'running' until we actually hear the user.
+            startMicMeter(stream);
         } catch (err) {
             console.error("Permission denied", err);
             updateCheck('camera', 'error');
             updateCheck('mic', 'error');
-            return;
         }
-
-        updateCheck('final', 'running');
-        await new Promise(r => setTimeout(r, 800));
-        updateCheck('final', 'completed');
-
-        setAllChecksPassed(true);
     };
+
+    // All passed = every check completed (mic requires real sound).
+    useEffect(() => {
+        setAllChecksPassed(checks.every(c => c.status === 'completed'));
+    }, [checks]);
 
     const handleBegin = async () => {
         // Update session duration before starting
@@ -81,6 +123,8 @@ export const PreJoinPage = () => {
         } catch (error) {
             console.error('Failed to update duration:', error);
         }
+        // Release the test stream before the interview page grabs its own.
+        micStreamRef.current?.getTracks().forEach(t => t.stop());
         // Navigate with sessionId in URL for persistence on reload
         navigate(`/interview/${sessionId}`);
     };
@@ -112,7 +156,26 @@ export const PreJoinPage = () => {
 
                             <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent flex justify-between text-xs">
                                 <span className="text-white/60">Candidate</span>
-                                <span className="text-white/40">Ready</span>
+                                <span className="text-white/40">{cameraReady ? 'Ready' : 'Waiting'}</span>
+                            </div>
+                        </GlassCard>
+
+                        {/* Live mic level meter */}
+                        <GlassCard className="p-4">
+                            <div className="flex items-center gap-3 mb-3">
+                                <Mic size={16} className={micHeard ? 'text-emerald-400' : 'text-white/40'} />
+                                <span className="text-sm text-white/70">Microphone Test</span>
+                                {micHeard ? (
+                                    <span className="text-[10px] text-emerald-400 ml-auto">✓ Sound detected</span>
+                                ) : (
+                                    <span className="text-[10px] text-white/30 ml-auto">Say "hello" or clap</span>
+                                )}
+                            </div>
+                            <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                                <div
+                                    className={`h-full rounded-full transition-all duration-75 ${micHeard ? 'bg-emerald-400' : 'bg-white/40'}`}
+                                    style={{ width: `${micLevel}%` }}
+                                />
                             </div>
                         </GlassCard>
 
@@ -164,7 +227,18 @@ export const PreJoinPage = () => {
                             ))}
                         </div>
 
-                        <div className="pt-4">
+                        {/* Quick how-it-works card */}
+                        <GlassCard className="p-4">
+                            <p className="text-[10px] uppercase tracking-wider text-white/30 mb-2">How it works</p>
+                            <ul className="space-y-1.5 text-xs text-white/50">
+                                <li>🎙 <strong className="text-white/70">Hands-free</strong> — toggle the radio icon and just talk; interrupt the AI anytime</li>
+                                <li>⌨️ <strong className="text-white/70">Push-to-talk</strong> — hold Spacebar as a fallback</li>
+                                <li>🔁 <strong className="text-white/70">Repeat</strong> — replay the last question from the header</li>
+                                <li>⏸ <strong className="text-white/70">Pause</strong> — freezes the timer if you need a break</li>
+                            </ul>
+                        </GlassCard>
+
+                        <div className="pt-2">
                             {allChecksPassed ? (
                                 <button
                                     onClick={handleBegin}
@@ -173,7 +247,11 @@ export const PreJoinPage = () => {
                                     Begin Interview
                                 </button>
                             ) : (
-                                <div className="h-12" />
+                                <div className="h-12 flex items-center justify-center text-xs text-white/30">
+                                    {checks.find(c => c.id === 'mic')?.status === 'running'
+                                        ? 'Waiting for your voice — say something!'
+                                        : 'Running checks...'}
+                                </div>
                             )}
                         </div>
                     </div>

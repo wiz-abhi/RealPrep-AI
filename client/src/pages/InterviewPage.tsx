@@ -6,9 +6,18 @@ import Webcam from 'react-webcam';
 import { CodeEditor } from '../components/ui/CodeEditor';
 import { useSpeech } from '../hooks/useSpeech';
 import { useHumeVision } from '../hooks/useHumeVision';
-import { Mic, MicOff, Square, Code, MessageSquare, X, Send, Clock } from 'lucide-react';
+import { useVAD } from '../hooks/useVAD';
+import { Mic, MicOff, Square, Code, MessageSquare, X, Send, Clock, Radio } from 'lucide-react';
 import { AIInterviewerAvatar } from '../components/ui/AIInterviewerAvatar';
 import { SimpleMarkdown } from '../components/ui/SimpleMarkdown';
+
+// Short persona-matched acknowledgements played instantly while the LLM thinks.
+// Kept brief so they don't overrun the first real sentence of the response.
+const FILLERS = {
+    technical: ['Mm-hmm, let me think about that.', 'Right, okay.', 'Got it, one second.', 'Interesting, let me see.'],
+    behavioral: ['Mm-hmm, thank you for sharing that.', 'I see, okay.', 'That makes sense, let me think.', 'Right, got it.'],
+    systemDesign: ['Okay, interesting. Let me consider that.', 'Right, let me think.', 'Mm-hmm, I see.', 'Got it, one moment.'],
+};
 
 export const InterviewPage = () => {
     const { sessionId } = useParams<{ sessionId: string }>();
@@ -18,6 +27,17 @@ export const InterviewPage = () => {
     const [showChat, setShowChat] = useState(true);
     const [showEditor, setShowEditor] = useState(false);
     const [voiceMode, setVoiceMode] = useState(true);
+    // Hands-free (VAD-driven turn-taking). Persisted across sessions.
+    const [handsFreeMode, setHandsFreeMode] = useState<boolean>(
+        () => typeof window !== 'undefined' && localStorage.getItem('hands_free_mode') === '1'
+    );
+    // Pause/resume — freezes the (server-authoritative) clock and blocks input.
+    const [isPaused, setIsPaused] = useState(false);
+    const pausedRef = useRef(false);
+    const fillerCountRef = useRef(0);
+    // Phase 3: interview-plan progress chip + last code-execution result panel.
+    const [phaseLabel, setPhaseLabel] = useState<string>('');
+    const [codeExecution, setCodeExecution] = useState<any>(null);
     const [_hasPlayedInitial, setHasPlayedInitial] = useState(false);
     const [textInput, setTextInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -35,6 +55,8 @@ export const InterviewPage = () => {
 
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
+    // Guards the greeting auto-play against React StrictMode double effects.
+    const initialPlayedRef = useRef(false);
 
     const {
         transcript,
@@ -46,9 +68,11 @@ export const InterviewPage = () => {
         startRecording,
         stopRecording,
         playResponse,
+        enqueueSpeech,
+        primeFillers,
         stopSpeaking,
         audioRef,
-        provider: _speechProvider
+        provider: speechProvider
     } = useSpeech();
 
     const {
@@ -58,6 +82,15 @@ export const InterviewPage = () => {
         emotions,
         isConnected: _isVisionConnected
     } = useHumeVision();
+
+    // Voice Activity Detection — powers hands-free mode + barge-in.
+    const {
+        start: startVAD,
+        stop: stopVAD,
+        setCallbacks: setVADCallbacks,
+        isUserSpeaking: vadUserSpeaking,
+        isLoading: vadLoading,
+    } = useVAD();
 
     const webcamRef = useRef<Webcam>(null);
     const [messages, setMessages] = useState<any[]>([]);
@@ -104,6 +137,16 @@ export const InterviewPage = () => {
                 const mappedType = serverType.toLowerCase().includes('behavioral') ? 'behavioral' :
                                    serverType.toLowerCase().includes('system') ? 'systemDesign' : 'technical';
                 setInterviewType(mappedType);
+                // Bridge for useSarvamSpeech — picks the persona-matched Bulbul voice
+                localStorage.setItem('active_interview_persona', mappedType);
+                if (session.phaseLabel) setPhaseLabel(session.phaseLabel);
+
+                // Pre-synthesize this persona's filler clips so the AI can
+                // "react" instantly (no synth round-trip) on the first answer.
+                if (primeFillers) {
+                    const fillers = FILLERS[mappedType as keyof typeof FILLERS] || FILLERS.technical;
+                    primeFillers(fillers).catch(() => { /* non-fatal */ });
+                }
 
                 // Load existing transcript
                 if (session.transcript && session.transcript.length > 0) {
@@ -113,12 +156,14 @@ export const InterviewPage = () => {
                         timestamp: t.timestamp
                     })));
 
-                    // Play the last AI message (greeting or continuation)
+                    // Play the last AI message (greeting or continuation).
+                    // initialPlayedRef guards against StrictMode's double effect
+                    // run in dev — without it the greeting plays twice at once.
                     const lastMessage = session.transcript[session.transcript.length - 1];
-                    if (lastMessage.sender === 'ai') {
+                    if (lastMessage.sender === 'ai' && !initialPlayedRef.current) {
+                        initialPlayedRef.current = true;
                         console.log('Auto-playing last AI message');
                         setTimeout(() => {
-                            // Use ref or just assume voiceMode is default true on load
                             playResponse(lastMessage.text);
                         }, 1000);
                     }
@@ -144,6 +189,7 @@ export const InterviewPage = () => {
         if (!timerActiveRef.current) return;
 
         const timer = setInterval(() => {
+            if (pausedRef.current) return; // frozen while paused
             setElapsedSeconds(prev => {
                 const next = prev + 1;
                 elapsedRef.current = next;
@@ -279,6 +325,106 @@ export const InterviewPage = () => {
     const isLoadingRef = useRef(isLoading);
     useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
 
+    // ── Hands-free VAD wiring (Phase 2.2/2.3) ──
+    // Uses refs (already maintained above) so the callback identity stays stable
+    // — otherwise the effect would re-run and re-register on every render.
+    useEffect(() => {
+        setVADCallbacks({
+            onSpeechStart: () => {
+                // Barge-in: cut the AI off mid-sentence when the user starts talking.
+                if (isSpeakingRef.current) {
+                    stopSpeaking();
+                }
+                // Start capturing the user's turn if not already.
+                if (!isRecordingRef.current && voiceModeRef.current && !isLoadingRef.current) {
+                    startRecording();
+                }
+            },
+            onSpeechEnd: () => {
+                // Natural end-of-turn: hand off to STT → transcript effect → send.
+                if (isRecordingRef.current) {
+                    stopRecording();
+                }
+            },
+        });
+    }, [setVADCallbacks, stopSpeaking, startRecording, stopRecording]);
+
+    // Start/stop VAD when the toggle flips (or the interview finishes loading).
+    // Suspended while paused; resumeInterview() restarts it explicitly.
+    useEffect(() => {
+        if (handsFreeMode && !sessionLoading && !isPaused) {
+            startVAD();
+        } else {
+            stopVAD();
+        }
+    }, [handsFreeMode, sessionLoading, isPaused, startVAD, stopVAD]);
+
+    const toggleHandsFree = useCallback(() => {
+        setHandsFreeMode(prev => {
+            const next = !prev;
+            try {
+                localStorage.setItem('hands_free_mode', next ? '1' : '0');
+            } catch { /* SSR / storage-disabled — safe to ignore */ }
+            return next;
+        });
+    }, []);
+
+    // ── Phase 3.4: repeat last question (no LLM call — just replay audio) ──
+    const handleRepeat = useCallback(() => {
+        const lastAi = [...messages].reverse().find(m => m.sender === 'ai' && m.text?.trim());
+        if (lastAi) {
+            stopSpeaking();
+            void playResponse(lastAi.text);
+        }
+    }, [messages, playResponse, stopSpeaking]);
+
+    // ── Phase 2.6: pause / resume ──
+    const pauseInterview = useCallback(async () => {
+        if (pausedRef.current) return;
+        pausedRef.current = true;
+        setIsPaused(true);
+        // Kill all live audio + capture so nothing runs during the pause.
+        stopSpeaking();
+        if (isRecordingRef.current) stopRecording();
+        stopVAD();
+        try {
+            const token = localStorage.getItem('token');
+            await fetch(`${API_BASE_URL}/api/interview/pause`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ sessionId }),
+            });
+        } catch (err) {
+            console.error('Pause failed:', err);
+        }
+    }, [sessionId, stopSpeaking, stopRecording, stopVAD]);
+
+    const resumeInterview = useCallback(async () => {
+        if (!pausedRef.current) return;
+        try {
+            const token = localStorage.getItem('token');
+            const res = await fetch(`${API_BASE_URL}/api/interview/resume`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ sessionId }),
+            });
+            const data = await res.json().catch(() => null);
+            // Re-sync the local clock to server truth (server excluded paused time).
+            if (data?.success && typeof data.data?.remainingSeconds === 'number') {
+                const serverElapsed = Math.max(0, totalDurationSeconds - data.data.remainingSeconds);
+                setElapsedSeconds(serverElapsed);
+                elapsedRef.current = serverElapsed;
+            }
+        } catch (err) {
+            console.error('Resume failed:', err);
+        } finally {
+            pausedRef.current = false;
+            setIsPaused(false);
+            // Restore hands-free listening if it was on.
+            if (handsFreeMode) startVAD();
+        }
+    }, [sessionId, totalDurationSeconds, handsFreeMode, startVAD]);
+
     // Keyboard Event Listener for Push-To-Talk (Hold Spacebar) and Skip (Escape)
     useEffect(() => {
         const spacePressed = { current: false };
@@ -346,37 +492,192 @@ export const InterviewPage = () => {
     }, [startRecording, stopRecording, stopSpeaking]);
 
     const handleSendMessage = useCallback(async (text: string) => {
-        if (!text.trim() || isLoading) return;
-        setMessages(prev => [...prev, { sender: 'user', text, timestamp: new Date() }]);
+        if (!text.trim() || isLoading || pausedRef.current) return;
+
+        // Clean slate: cut off any audio still playing from the previous turn
+        // (e.g. user typed a new answer while the AI was still speaking).
+        stopSpeaking();
+
+        // Add user message + AI placeholder in one batched update.
+        setMessages(prev => [
+            ...prev,
+            { sender: 'user', text, timestamp: new Date() },
+            { sender: 'ai', text: '', timestamp: new Date(), streaming: true },
+        ]);
         setTextInput('');
         setIsLoading(true);
 
+        // Streaming accumulators (kept in closure to avoid stale React state).
+        let aiFullText = '';
+        let ttsBuffer = '';
+        const ttsQueue: string[] = [];
+        let ttsWorkerRunning = false;
+        let ttsAborted = false;
+        let firstChunkSpoken = false;
+
+        // Speech strategy:
+        //  - Sarvam → streaming pipeline (enqueueSpeech): synthesizes sentences
+        //    ahead while the current one plays, so audio is gap-free and the
+        //    first clip starts almost immediately. Fillers are pre-cached.
+        //  - Azure  → sequential awaited playResponse (its SDK streams natively).
+        const usePipeline = speechProvider === 'sarvam' && voiceMode && !!enqueueSpeech;
+        const useChunkedTTS = speechProvider === 'azure' && voiceMode;
+        const wantsTTS = usePipeline || useChunkedTTS;
+
+        // Push a chunk of text into whichever TTS path is active.
+        const speakChunk = (chunk: string) => {
+            if (!chunk.trim()) return;
+            if (usePipeline) {
+                enqueueSpeech!(chunk);
+            } else {
+                ttsQueue.push(chunk);
+                void drainTTS();
+            }
+        };
+
+        // ── Phase 2.4: conversational filler ──
+        // A short persona-matched acknowledgement the instant the user finishes,
+        // so the AI "reacts" immediately while the LLM is still thinking. For
+        // Sarvam this plays from cache (no network wait); it's first in order so
+        // it never races the real response.
+        if (wantsTTS) {
+            const fillers = FILLERS[interviewType as keyof typeof FILLERS] || FILLERS.technical;
+            const filler = fillers[fillerCountRef.current % fillers.length];
+            fillerCountRef.current += 1;
+            speakChunk(filler);
+        }
+
+        // Azure sequential worker: plays queued chunks one at a time.
+        const drainTTS = async () => {
+            if (ttsWorkerRunning || !voiceMode) return;
+            ttsWorkerRunning = true;
+            try {
+                while (ttsQueue.length > 0 && !ttsAborted) {
+                    const chunk = ttsQueue.shift()!;
+                    try {
+                        await playResponse(chunk);
+                    } catch (e) {
+                        console.error('TTS chunk failed:', e);
+                        ttsAborted = true;
+                        break;
+                    }
+                }
+            } finally {
+                ttsWorkerRunning = false;
+            }
+        };
+
+        // Extract speakable chunks from ttsBuffer as text streams in.
+        // The FIRST chunk breaks on the earliest clause boundary (comma/colon/
+        // dash or sentence end) so audio starts as soon as possible; subsequent
+        // chunks break on full sentences for natural prosody.
+        const flushSentences = () => {
+            if (!wantsTTS) return;
+            if (!firstChunkSpoken) {
+                const m = ttsBuffer.match(/^(.{6,}?[.?!,;:—-])\s/);
+                if (m) {
+                    firstChunkSpoken = true;
+                    speakChunk(m[1].trim());
+                    ttsBuffer = ttsBuffer.slice(m[0].length);
+                }
+            }
+            const re = /^(.+?[.?!])\s+/;
+            let m: RegExpMatchArray | null;
+            // eslint-disable-next-line no-cond-assign
+            while ((m = ttsBuffer.match(re))) {
+                firstChunkSpoken = true;
+                speakChunk(m[1].trim());
+                ttsBuffer = ttsBuffer.slice(m[0].length);
+            }
+        };
+
+        const updateAiMessage = (fullText: string) => {
+            setMessages(prev => {
+                const arr = [...prev];
+                const last = arr[arr.length - 1];
+                if (last && last.sender === 'ai') {
+                    arr[arr.length - 1] = { ...last, text: fullText };
+                }
+                return arr;
+            });
+        };
+
         try {
             const token = localStorage.getItem('token');
-            const userGeminiKey = localStorage.getItem('user_gemini_api_key');
-            const res = await fetch(`${API_BASE_URL}/api/interview/chat`, {
+            const res = await fetch(`${API_BASE_URL}/api/interview/chat-stream`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
-                    ...(userGeminiKey && { 'X-User-Gemini-Key': userGeminiKey })
                 },
-                body: JSON.stringify({ sessionId, message: text, emotions: emotions.slice(0, 5), remainingSeconds, totalDurationSeconds })
+                body: JSON.stringify({ sessionId, message: text, emotions: emotions.slice(0, 5) }),
             });
 
-            const data = await res.json();
-            if (data.success) {
-                setMessages(prev => [...prev, { sender: 'ai', text: data.data.response, timestamp: new Date() }]);
-                if (voiceMode) {
-                    playResponse(data.data.response);
+            if (!res.ok || !res.body) {
+                throw new Error(`Stream ${res.status}`);
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                let idx: number;
+                // eslint-disable-next-line no-cond-assign
+                while ((idx = buffer.indexOf('\n\n')) !== -1) {
+                    const eventChunk = buffer.slice(0, idx).trim();
+                    buffer = buffer.slice(idx + 2);
+                    if (!eventChunk.startsWith('data:')) continue;
+                    const dataStr = eventChunk.slice(5).trim();
+                    if (!dataStr) continue;
+                    try {
+                        const evt = JSON.parse(dataStr);
+                        if (evt.type === 'meta' && typeof evt.phaseLabel === 'string' && evt.phaseLabel) {
+                            setPhaseLabel(evt.phaseLabel);
+                        } else if (evt.type === 'delta' && typeof evt.text === 'string') {
+                            aiFullText += evt.text;
+                            updateAiMessage(aiFullText);
+                            if (wantsTTS) {
+                                ttsBuffer += evt.text;
+                                flushSentences();
+                            }
+                        } else if (evt.type === 'done') {
+                            if (typeof evt.response === 'string' && evt.response.length > 0) {
+                                aiFullText = evt.response;
+                                updateAiMessage(aiFullText);
+                            }
+                            if (wantsTTS) {
+                                const remainder = ttsBuffer.trim();
+                                if (remainder.length > 0) {
+                                    speakChunk(remainder);
+                                    ttsBuffer = '';
+                                }
+                            } else if (voiceMode && aiFullText.length > 0) {
+                                // ElevenLabs (no pipeline): play the whole thing at once.
+                                void playResponse(aiFullText);
+                            }
+                        } else if (evt.type === 'error') {
+                            console.error('Server stream error:', evt.message);
+                        }
+                    } catch (e) {
+                        console.error('SSE parse error:', e, dataStr);
+                    }
                 }
             }
         } catch (error) {
-            console.error('Chat error:', error);
+            console.error('Streaming chat error:', error);
+            // If we never got any text, remove the empty placeholder.
+            if (aiFullText.length === 0) {
+                setMessages(prev => prev.slice(0, -1));
+            }
         } finally {
             setIsLoading(false);
         }
-    }, [sessionId, emotions, voiceMode, playResponse, isLoading, remainingSeconds, totalDurationSeconds]);
+    }, [sessionId, emotions, voiceMode, playResponse, enqueueSpeech, stopSpeaking, isLoading, speechProvider, interviewType]);
 
     // Track the last sent transcript to prevent duplicate sends
     const lastSentTranscript = useRef<string>('');
@@ -413,19 +714,19 @@ export const InterviewPage = () => {
 
         try {
             const token = localStorage.getItem('token');
-            const userGeminiKey = localStorage.getItem('user_gemini_api_key');
             const res = await fetch(`${API_BASE_URL}/api/interview/code`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
-                    ...(userGeminiKey && { 'X-User-Gemini-Key': userGeminiKey })
                 },
                 body: JSON.stringify({ sessionId, code, language })
             });
 
             const data = await res.json();
             if (data.success) {
+                // Surface the sandbox execution result (stdout/stderr/exit).
+                if (data.data.execution) setCodeExecution(data.data.execution);
                 // Add code submission message
                 setMessages(prev => [...prev, {
                     sender: 'user',
@@ -661,6 +962,19 @@ export const InterviewPage = () => {
                     <span className={`text-[10px] px-2 py-0.5 rounded ${voiceMode ? 'bg-white/10 text-white/60' : 'bg-white/5 text-white/40'}`}>
                         {voiceMode ? '🎤 Voice' : '⌨️ Text'}
                     </span>
+                    {phaseLabel && (
+                        <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/20" title="Interview progress">
+                            {phaseLabel}
+                        </span>
+                    )}
+                    <button
+                        onClick={handleRepeat}
+                        disabled={isSpeaking}
+                        className="text-[10px] px-2 py-0.5 rounded text-white/40 hover:text-white hover:bg-white/5 border border-white/10 disabled:opacity-30 transition-colors"
+                        title="Replay the interviewer's last message"
+                    >
+                        🔁 Repeat
+                    </button>
 
                     {/* Visual Status Indicator */}
                     <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/50 border border-white/10">
@@ -687,10 +1001,44 @@ export const InterviewPage = () => {
                         )}
                     </div>
                 </div>
-                <button onClick={handleEndInterviewClick} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5 transition-colors">
-                    End Interview
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={isPaused ? resumeInterview : pauseInterview}
+                        className={`px-3 py-1.5 text-xs border rounded transition-colors ${
+                            isPaused
+                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30'
+                                : 'text-white/50 hover:text-white border-white/10 hover:bg-white/5'
+                        }`}
+                        title={isPaused ? 'Resume interview' : 'Pause interview (freezes the timer)'}
+                    >
+                        {isPaused ? '▶ Resume' : '⏸ Pause'}
+                    </button>
+                    <button onClick={handleEndInterviewClick} className="px-3 py-1.5 text-xs text-white/50 hover:text-white border border-white/10 rounded hover:bg-white/5 transition-colors">
+                        End Interview
+                    </button>
+                </div>
             </header>
+
+            {/* Paused overlay */}
+            {isPaused && (
+                <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center z-[60]">
+                    <div className="flex flex-col items-center gap-5 text-center px-6">
+                        <div className="w-16 h-16 rounded-full border border-white/20 flex items-center justify-center">
+                            <span className="text-3xl">⏸</span>
+                        </div>
+                        <div>
+                            <h3 className="text-xl font-light text-white mb-1">Interview Paused</h3>
+                            <p className="text-sm text-white/50">The timer is frozen. Take your time.</p>
+                        </div>
+                        <button
+                            onClick={resumeInterview}
+                            className="px-6 py-2.5 bg-white text-black rounded-full text-sm font-medium hover:bg-white/90 transition-colors"
+                        >
+                            ▶ Resume Interview
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* End Interview Confirmation Modal */}
             {showEndModal && (
@@ -734,12 +1082,12 @@ export const InterviewPage = () => {
             {/* Main Area */}
             <div className="flex-1 flex overflow-hidden pt-2">
                 <div className="flex-1 flex flex-col">
-                    {/* Video/Grid Container - Single Row Layout */}
-                    <div className="flex-1 p-4 overflow-hidden">
-                        <div className="w-full h-full flex gap-4">
+                    {/* Video/Grid Container — row on desktop, stacked column on mobile */}
+                    <div className="flex-1 p-4 overflow-y-auto md:overflow-hidden">
+                        <div className="w-full h-full flex flex-col md:flex-row gap-4">
                             {/* Transcript/Chat Panel - Optional */}
                             {showChat && (
-                                <div className="w-72 shrink-0 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex flex-col">
+                                <div className="w-full md:w-72 shrink-0 h-56 md:h-auto order-3 md:order-none bg-black/50 border border-white/10 rounded-lg overflow-hidden flex flex-col">
                                     <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
                                         <span className="text-[10px] uppercase tracking-wider text-white/40">{voiceMode ? 'Transcript' : 'Chat'}</span>
                                         <button onClick={() => setShowChat(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
@@ -752,10 +1100,10 @@ export const InterviewPage = () => {
                             )}
 
                             {/* User Cam */}
-                            <div className="flex-1 relative bg-black border border-white/10 rounded-lg overflow-hidden">
+                            <div className="flex-1 relative bg-black border border-white/10 rounded-lg overflow-hidden min-h-44 md:min-h-0 order-2 md:order-none">
                                 <Webcam ref={webcamRef} audio={false} className="w-full h-full object-cover" />
                                 <div className="absolute bottom-3 left-3 bg-black/70 px-2 py-1 rounded text-xs text-white/60">{(user as any)?.name || 'You'}</div>
-                                <div className="absolute top-3 right-3 flex flex-col gap-1.5 items-end">
+                                <div className="absolute top-3 right-3 hidden md:flex flex-col gap-1.5 items-end">
                                     {emotions.slice(0, 5).map((e: any, i: number) => (
                                         <div key={i} className="bg-black/70 px-2.5 py-1 rounded text-[10px] flex items-center gap-2 border border-white/10 backdrop-blur-sm">
                                             <span className="text-white/70 min-w-[72px] text-right">{e.name}</span>
@@ -771,15 +1119,34 @@ export const InterviewPage = () => {
                                 </div>
                             </div>
 
-                            {/* Center Icons */}
-                            <div className="w-14 shrink-0 flex flex-col items-center justify-center gap-3">
-                                <button onClick={() => setShowChat(!showChat)} className={`p-2.5 rounded transition-all ${showChat ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Transcript">
+                            {/* Center Icons — column on desktop, horizontal bar on mobile */}
+                            <div className="w-full md:w-14 shrink-0 flex flex-row md:flex-col items-center justify-center gap-3 order-4 md:order-none">
+                                <button aria-label="Toggle transcript panel" onClick={() => setShowChat(!showChat)} className={`p-2.5 rounded transition-all ${showChat ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Transcript">
                                     <MessageSquare size={16} />
                                 </button>
-                                <button onClick={toggleVoiceMode} className={`p-2.5 rounded transition-all ${!voiceMode ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Toggle Voice/Text">
+                                <button aria-label={voiceMode ? 'Switch to text mode' : 'Switch to voice mode'} onClick={toggleVoiceMode} className={`p-2.5 rounded transition-all ${!voiceMode ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Toggle Voice/Text">
                                     {voiceMode ? <Mic size={16} /> : <MicOff size={16} />}
                                 </button>
-                                <button onClick={() => setShowEditor(!showEditor)} className={`p-2.5 rounded transition-all ${showEditor ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Code Editor">
+                                <button
+                                    aria-label={handsFreeMode ? 'Disable hands-free mode' : 'Enable hands-free mode'}
+                                    onClick={toggleHandsFree}
+                                    disabled={vadLoading}
+                                    className={`p-2.5 rounded transition-all ${
+                                        handsFreeMode
+                                            ? 'bg-emerald-500/20 text-emerald-400'
+                                            : 'text-white/30 hover:text-white hover:bg-white/5'
+                                    } ${vadLoading ? 'opacity-50 cursor-wait' : ''}`}
+                                    title={
+                                        vadLoading
+                                            ? 'Loading VAD model…'
+                                            : handsFreeMode
+                                                ? 'Hands-free ON — the AI listens for you and can be interrupted'
+                                                : 'Enable hands-free mode (VAD)'
+                                    }
+                                >
+                                    <Radio size={16} className={handsFreeMode && vadUserSpeaking ? 'animate-pulse' : ''} />
+                                </button>
+                                <button aria-label="Toggle code editor" onClick={() => setShowEditor(!showEditor)} className={`p-2.5 rounded transition-all ${showEditor ? 'bg-white/10 text-white' : 'text-white/30 hover:text-white hover:bg-white/5'}`} title="Code Editor">
                                     <Code size={16} />
                                 </button>
                             </div>
@@ -787,18 +1154,18 @@ export const InterviewPage = () => {
                             {/* AI Cam OR Code Editor - they swap places */}
                             {showEditor ? (
                                 /* Code Editor replaces AI Cam */
-                                <div className="flex-1 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex flex-col">
+                                <div className="flex-1 bg-black/50 border border-white/10 rounded-lg overflow-hidden flex flex-col min-h-80 md:min-h-0 order-1 md:order-none">
                                     <div className="h-10 shrink-0 flex items-center justify-between px-3 border-b border-white/5">
                                         <span className="text-[10px] uppercase tracking-wider text-white/40">Code Editor</span>
-                                        <button onClick={() => setShowEditor(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
+                                        <button aria-label="Close code editor" onClick={() => setShowEditor(false)} className="text-white/30 hover:text-white/60"><X size={12} /></button>
                                     </div>
                                     <div className="flex-1 overflow-hidden">
-                                        <CodeEditor onSubmit={handleCodeSubmit} isSubmitting={isCodeSubmitting} />
+                                        <CodeEditor onSubmit={handleCodeSubmit} isSubmitting={isCodeSubmitting} executionResult={codeExecution} />
                                     </div>
                                 </div>
                             ) : (
                                 /* AI Cam - default view */
-                                <div className="flex-1 relative flex">
+                                <div className="flex-1 relative flex min-h-56 md:min-h-0 order-1 md:order-none">
                                     <AIInterviewerAvatar
                                         isSpeaking={isSpeaking}
                                         isListening={isRecording}

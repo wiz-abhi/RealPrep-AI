@@ -216,6 +216,10 @@ export const deleteAccount = async (req: Request, res: Response) => {
             where: { userId }
         });
 
+        await prisma.passwordResetToken.deleteMany({
+            where: { userId }
+        });
+
         await prisma.user.delete({
             where: { id: userId }
         });

@@ -88,20 +88,33 @@ export const useHumeVision = () => {
     const [isConnected, setIsConnected] = useState(false);
     const socketRef = useRef<WebSocket | null>(null);
 
+    const manualCloseRef = useRef(false);
+    const retryCountRef = useRef(0);
+
     const connect = useCallback(async () => {
         try {
+            // Guard against StrictMode double-connect: if a socket is already
+            // open or connecting, don't open a second one.
+            const existing = socketRef.current;
+            if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) {
+                return;
+            }
+            manualCloseRef.current = false;
+
             // Get API key (user's custom key or env key)
             const apiKey = getHumeApiKey();
 
             const socketUrl = `wss://api.hume.ai/v0/stream/models?api_key=${apiKey}`;
-            socketRef.current = new WebSocket(socketUrl);
+            const socket = new WebSocket(socketUrl);
+            socketRef.current = socket;
 
-            socketRef.current.onopen = () => {
+            socket.onopen = () => {
                 console.log('Hume Vision Connected');
+                retryCountRef.current = 0;
                 setIsConnected(true);
             };
 
-            socketRef.current.onmessage = (event) => {
+            socket.onmessage = (event) => {
                 const response = JSON.parse(event.data);
                 if (response.face && response.face.predictions) {
                     const predictions = response.face.predictions[0]?.emotions;
@@ -111,7 +124,16 @@ export const useHumeVision = () => {
                 }
             };
 
-            socketRef.current.onclose = () => setIsConnected(false);
+            socket.onclose = () => {
+                setIsConnected(false);
+                // Retry a couple of times on unexpected closure (network blip,
+                // Hume-side hiccup) — never after a deliberate disconnect.
+                if (!manualCloseRef.current && retryCountRef.current < 2) {
+                    retryCountRef.current += 1;
+                    console.log(`Hume Vision reconnecting (attempt ${retryCountRef.current})...`);
+                    setTimeout(() => connect(), 3000);
+                }
+            };
 
         } catch (error) {
             console.error('Hume Connection Error:', error);
@@ -136,8 +158,10 @@ export const useHumeVision = () => {
     }, []);
 
     const disconnect = useCallback(() => {
+        manualCloseRef.current = true;
         if (socketRef.current) {
             socketRef.current.close();
+            socketRef.current = null;
         }
     }, []);
 

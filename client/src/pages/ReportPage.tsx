@@ -4,8 +4,24 @@ import { PageLoader } from '../components/ui/Loader';
 import { useParams, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
 import { GlassCard } from '../components/ui/GlassCard';
-import { Sparkles, Brain, Heart, Target, ChevronDown, ChevronUp } from 'lucide-react';
+import { Sparkles, Brain, Heart, Target, ChevronDown, ChevronUp, Activity } from 'lucide-react';
 import { SimpleMarkdown } from '../components/ui/SimpleMarkdown';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+
+// Transform raw emotionHistory entries into chart points: composure (Joy) vs
+// stress (Fear + Anxiety) sampled at each snapshot during the interview.
+const buildEmotionTimeline = (emotionHistory: any[]): any[] => {
+    if (!Array.isArray(emotionHistory) || emotionHistory.length === 0) return [];
+    return emotionHistory.map((entry: any, i: number) => {
+        const get = (name: string) =>
+            entry.emotions?.find((e: any) => e.name === name)?.score || 0;
+        return {
+            index: i + 1,
+            confidence: Math.round(get('Joy') * 100),
+            stress: Math.round((get('Fear') + get('Anxiety')) * 50),
+        };
+    });
+};
 
 export const ReportPage = () => {
     const { sessionId } = useParams();
@@ -32,6 +48,10 @@ export const ReportPage = () => {
 
             if (data.success) {
                 setReport(data.data);
+                // Use the persisted plan if one was already generated for this session.
+                if (data.data?.feedback?.improvementPlan) {
+                    setImprovementPlan(data.data.feedback.improvementPlan);
+                }
             } else {
                 setError('Failed to load report');
             }
@@ -96,17 +116,20 @@ export const ReportPage = () => {
     }
 
     const emotionalAnalysis = report.feedback?.emotionalAnalysis;
+    const emotionTimeline = buildEmotionTimeline(report.feedback?.emotionHistory || []);
 
     return (
         <div className="flex min-h-screen bg-black text-white">
-            <Sidebar />
+            <div className="print:hidden">
+                <Sidebar />
+            </div>
 
-            <main className="flex-1 ml-16 lg:ml-56 p-8 pt-24">
+            <main className="flex-1 ml-16 lg:ml-56 p-8 pt-24 print:ml-0 print:p-4 print:pt-4">
                 <div className="max-w-4xl mx-auto space-y-6">
                     {/* Header */}
                     <div className="flex items-center justify-between">
                         <h1 className="text-2xl font-light">Interview Report</h1>
-                        <button onClick={() => navigate('/dashboard')} className="btn-secondary text-sm">
+                        <button onClick={() => navigate('/dashboard')} className="btn-secondary text-sm print:hidden">
                             Back to Dashboard
                         </button>
                     </div>
@@ -266,6 +289,44 @@ export const ReportPage = () => {
                                     ))}
                                 </div>
                             )}
+                        </GlassCard>
+                    )}
+
+                    {/* Emotion Timeline (Phase 4.3) */}
+                    {emotionTimeline.length >= 3 && (
+                        <GlassCard className="p-5">
+                            <div className="flex items-center gap-2 mb-4">
+                                <Activity size={16} className="text-cyan-400" />
+                                <h3 className="text-sm font-medium text-white/60 uppercase tracking-wider">Composure Over Time</h3>
+                            </div>
+                            <div className="h-52">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={emotionTimeline} margin={{ top: 5, right: 10, bottom: 5, left: -20 }}>
+                                        <XAxis
+                                            dataKey="index"
+                                            stroke="rgba(255,255,255,0.2)"
+                                            tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }}
+                                            label={{ value: 'During interview →', position: 'insideBottom', offset: -2, fontSize: 9, fill: 'rgba(255,255,255,0.3)' }}
+                                        />
+                                        <YAxis
+                                            domain={[0, 100]}
+                                            stroke="rgba(255,255,255,0.2)"
+                                            tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }}
+                                        />
+                                        <Tooltip
+                                            contentStyle={{ background: '#18181b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }}
+                                            labelFormatter={(v) => `Snapshot ${v}`}
+                                        />
+                                        <ReferenceLine y={50} stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" />
+                                        <Line type="monotone" dataKey="confidence" name="Confidence" stroke="#34d399" strokeWidth={2} dot={false} />
+                                        <Line type="monotone" dataKey="stress" name="Stress" stroke="#f87171" strokeWidth={2} dot={false} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </div>
+                            <div className="flex gap-4 justify-center mt-2 text-[10px] text-white/40">
+                                <span className="flex items-center gap-1.5"><span className="w-2 h-0.5 bg-emerald-400 inline-block" /> Confidence</span>
+                                <span className="flex items-center gap-1.5"><span className="w-2 h-0.5 bg-red-400 inline-block" /> Stress</span>
+                            </div>
                         </GlassCard>
                     )}
 
@@ -560,7 +621,7 @@ export const ReportPage = () => {
                         };
 
                         return (
-                            <div className="flex gap-4 justify-center pt-4">
+                            <div className="flex gap-4 justify-center pt-4 print:hidden">
                                 {report.feedback?.improvements?.length > 0 && (
                                     <button 
                                         onClick={handlePracticeWeakAreas} 
