@@ -1,5 +1,12 @@
 import { useState, useCallback, useRef } from 'react';
 import { API_BASE_URL } from '../config/api';
+import {
+    connectTtsStream,
+    speakStream,
+    flushStream,
+    cancelStream,
+    isTtsStreamReady,
+} from './sarvamTtsStream';
 
 // ── Global audio state (single active audio element across the app) ──
 let globalAudio: HTMLAudioElement | null = null;
@@ -72,9 +79,11 @@ export const useSarvamSpeech = () => {
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
 
-    // Fully stop speech: cancel the pipeline (bump epoch), drop queued audio,
-    // and halt the current element. Any stopSpeaking() = a hard interrupt.
+    // Fully stop speech: cancel the streaming pipeline AND the REST pipeline
+    // (bump epoch), drop queued audio, halt the current element. Any
+    // stopSpeaking() = a hard interrupt (barge-in / new turn).
     const stopSpeaking = useCallback(() => {
+        cancelStream();
         speechEpoch++;
         synthQueue = [];
         playbackRunning = false;
@@ -85,6 +94,17 @@ export const useSarvamSpeech = () => {
         }
         audioRef.current = null;
         setIsSpeaking(false);
+    }, []);
+
+    // Open the streaming-TTS connection for this persona (call once on load).
+    // isSpeaking is driven by the stream's playback state while it's active.
+    const connectStreaming = useCallback((persona: string) => {
+        connectTtsStream(persona, 'en-IN', (speaking) => setIsSpeaking(speaking));
+    }, []);
+
+    // Flush any text buffered on the streaming connection (call at turn end).
+    const flushSpeech = useCallback(() => {
+        if (isTtsStreamReady()) flushStream();
     }, []);
 
     // Play one prepared audio buffer; resolves when it ends / errors / is cut off.
@@ -136,6 +156,12 @@ export const useSarvamSpeech = () => {
      */
     const enqueueSpeech = useCallback((text: string) => {
         if (!text.trim()) return;
+        // Prefer the low-latency streaming path; fall back to the REST pipeline
+        // if the stream isn't connected/ready.
+        if (isTtsStreamReady()) {
+            speakStream(text);
+            return;
+        }
         const epoch = speechEpoch;
         synthQueue.push(fetchTTSBytes(text, epoch));
         runPlayback(epoch);
@@ -282,6 +308,8 @@ export const useSarvamSpeech = () => {
         playResponse,
         enqueueSpeech,
         primeFillers,
+        connectStreaming,
+        flushSpeech,
         stopSpeaking,
         audioRef,
     };

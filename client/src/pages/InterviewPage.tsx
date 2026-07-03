@@ -70,6 +70,8 @@ export const InterviewPage = () => {
         playResponse,
         enqueueSpeech,
         primeFillers,
+        connectStreaming,
+        flushSpeech,
         stopSpeaking,
         audioRef,
         provider: speechProvider
@@ -141,8 +143,10 @@ export const InterviewPage = () => {
                 localStorage.setItem('active_interview_persona', mappedType);
                 if (session.phaseLabel) setPhaseLabel(session.phaseLabel);
 
-                // Pre-synthesize this persona's filler clips so the AI can
-                // "react" instantly (no synth round-trip) on the first answer.
+                // Open the low-latency streaming-TTS connection for this persona.
+                if (connectStreaming) connectStreaming(mappedType);
+                // Pre-synthesize this persona's filler clips as a REST fallback
+                // (used only if the stream isn't ready).
                 if (primeFillers) {
                     const fillers = FILLERS[mappedType as keyof typeof FILLERS] || FILLERS.technical;
                     primeFillers(fillers).catch(() => { /* non-fatal */ });
@@ -656,6 +660,9 @@ export const InterviewPage = () => {
                                     speakChunk(remainder);
                                     ttsBuffer = '';
                                 }
+                                // Flush the streaming connection so Sarvam emits
+                                // any remaining buffered audio for this turn.
+                                if (usePipeline && flushSpeech) flushSpeech();
                             } else if (voiceMode && aiFullText.length > 0) {
                                 // ElevenLabs (no pipeline): play the whole thing at once.
                                 void playResponse(aiFullText);
@@ -677,7 +684,7 @@ export const InterviewPage = () => {
         } finally {
             setIsLoading(false);
         }
-    }, [sessionId, emotions, voiceMode, playResponse, enqueueSpeech, stopSpeaking, isLoading, speechProvider, interviewType]);
+    }, [sessionId, emotions, voiceMode, playResponse, enqueueSpeech, flushSpeech, stopSpeaking, isLoading, speechProvider, interviewType]);
 
     // Track the last sent transcript to prevent duplicate sends
     const lastSentTranscript = useRef<string>('');
@@ -940,19 +947,6 @@ export const InterviewPage = () => {
 
     return (
         <div className="h-screen bg-black text-white flex flex-col overflow-hidden">
-            {/* FLOATING TIMER - Always visible in top-right */}
-            <div className="fixed top-20 right-6 z-50">
-                <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900 rounded-xl border border-white/20 shadow-2xl">
-                    <Clock className="w-5 h-5 text-white/70" />
-                    <div className="flex flex-col leading-none">
-                        <span className="text-[9px] text-white/50 uppercase tracking-wider">Time Left</span>
-                        <span className={`text-xl font-mono font-bold ${timerColor}`}>
-                            {formatTime(remainingSeconds)}
-                        </span>
-                    </div>
-                </div>
-            </div>
-
             {/* Header with status indicators */}
             <header className="h-12 shrink-0 flex items-center justify-between px-6 border-b border-white/5 bg-black/50">
                 <div className="flex items-center gap-4">
@@ -1001,7 +995,14 @@ export const InterviewPage = () => {
                         )}
                     </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
+                    {/* Countdown timer — inline in the header (no more floating overlap) */}
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-zinc-900 border border-white/15" title="Time remaining">
+                        <Clock className="w-3.5 h-3.5 text-white/50" />
+                        <span className={`text-sm font-mono font-bold tabular-nums ${timerColor}`}>
+                            {formatTime(remainingSeconds)}
+                        </span>
+                    </div>
                     <button
                         onClick={isPaused ? resumeInterview : pauseInterview}
                         className={`px-3 py-1.5 text-xs border rounded transition-colors ${

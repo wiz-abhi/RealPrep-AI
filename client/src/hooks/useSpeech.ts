@@ -35,6 +35,8 @@ export const useSpeech = () => {
     // providers fall back to whole-response playResponse (fields undefined).
     type EnqueueFn = ((text: string) => void) | undefined;
     type PrimeFn = ((texts: string[]) => Promise<void>) | undefined;
+    type ConnectFn = ((persona: string) => void) | undefined;
+    type FlushFn = (() => void) | undefined;
 
     if (SPEECH_PROVIDER === 'sarvam') {
         return {
@@ -49,6 +51,8 @@ export const useSpeech = () => {
             playResponse: sarvamSpeech.playResponse,
             enqueueSpeech: sarvamSpeech.enqueueSpeech as EnqueueFn,
             primeFillers: sarvamSpeech.primeFillers as PrimeFn,
+            connectStreaming: sarvamSpeech.connectStreaming as ConnectFn,
+            flushSpeech: sarvamSpeech.flushSpeech as FlushFn,
             stopSpeaking: sarvamSpeech.stopSpeaking,
             audioRef: sarvamSpeech.audioRef,
             provider: 'sarvam' as const,
@@ -68,6 +72,8 @@ export const useSpeech = () => {
             playResponse: azureSpeech.playResponse,
             enqueueSpeech: undefined as EnqueueFn,
             primeFillers: undefined as PrimeFn,
+            connectStreaming: undefined as ConnectFn,
+            flushSpeech: undefined as FlushFn,
             stopSpeaking: azureSpeech.stopSpeaking,
             audioRef: (azureSpeech as any).audioRef || { current: null },
             provider: 'azure' as const,
@@ -86,6 +92,8 @@ export const useSpeech = () => {
         playResponse: elevenLabs.playResponse,
         enqueueSpeech: undefined as EnqueueFn,
         primeFillers: undefined as PrimeFn,
+        connectStreaming: undefined as ConnectFn,
+        flushSpeech: undefined as FlushFn,
         stopSpeaking: elevenLabs.stopSpeaking,
         audioRef: elevenLabs.audioRef,
         provider: 'elevenlabs' as const,

@@ -5,15 +5,11 @@
   "description": "AI-powered interview preparation platform",
   "author": "RealPrep Team",
   "type": "module",
-  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:electron": "set ELECTRON=true&& tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run build:electron && electron-builder"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@elevenlabs/react": "^0.12.1",
@@ -36,6 +32,7 @@
     "react-simple-code-editor": "^0.14.1",
     "react-webcam": "^7.2.0",
     "recharts": "^3.5.1",
+    "socket.io-client": "^4.8.3",
     "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
@@ -45,9 +42,6 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.22",
-    "concurrently": "^9.0.0",
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",
@@ -56,27 +50,6 @@
     "tailwindcss": "^4.1.18",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4",
-    "wait-on": "^8.0.0"
-  },
-  "build": {
-    "appId": "com.realprep.app",
-    "productName": "RealPrep AI",
-    "directories": {
-      "output": "electron-dist"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/**/*"
-    ],
-    "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico",
-      "signAndEditExecutable": false
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+    "vite": "^7.2.4"
   }
 }

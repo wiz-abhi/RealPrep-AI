@@ -45,6 +45,7 @@ import adminRoutes from './src/routes/admin.routes';
 import paymentRoutes from './src/routes/payment.routes';
 import speechRoutes from './src/routes/speech.routes';
 import { cleanupExpiredResumes } from './src/controllers/resume.controller';
+import { registerTtsStream } from './src/services/ttsStream';
 
 app.use(cors({
     origin: allowedOrigins,
@@ -100,14 +101,8 @@ app.get('/health', (req: express.Request, res: express.Response) => {
     res.json({ status: 'ok', timestamp: new Date() });
 });
 
-// Socket.io Connection
-io.on('connection', (socket: import('socket.io').Socket) => {
-    console.log('Client connected:', socket.id);
-
-    socket.on('disconnect', () => {
-        console.log('Client disconnected:', socket.id);
-    });
-});
+// Streaming TTS relay (Sarvam Bulbul WebSocket ⟷ browser via Socket.io).
+registerTtsStream(io);
 
 const PORT = process.env.PORT || 3000;
 
