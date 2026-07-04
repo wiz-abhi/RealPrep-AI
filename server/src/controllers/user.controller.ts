@@ -36,9 +36,10 @@ export const getStats = async (req: Request, res: Response) => {
     try {
         const userId = req.userId;
 
-        // Get total interviews
+        // Get total interviews (only the fields needed — feedback blobs are huge)
         const sessions = await prisma.session.findMany({
-            where: { userId }
+            where: { userId },
+            select: { status: true, score: true }
         });
 
         const totalInterviews = sessions.length;

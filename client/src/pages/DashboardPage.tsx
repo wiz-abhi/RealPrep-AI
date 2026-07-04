@@ -25,9 +25,9 @@ export const DashboardPage = () => {
                     setSessions(data.data.map((s: any) => ({
                         id: s.id,
                         type: s.type,
+                        status: s.status,
                         date: new Date(s.createdAt).toLocaleDateString(),
-                        score: s.score || '-',
-                        duration: '20m'
+                        score: (s.status === 'completed' && typeof s.score === 'number') ? s.score : '-',
                     })));
                 }
             } catch (err) {
@@ -61,8 +61,10 @@ export const DashboardPage = () => {
     }, []);
 
     const totalSessions = sessions.length;
-    const avgScore = sessions.length > 0
-        ? Math.round(sessions.reduce((acc, s) => acc + (s.score === '-' ? 0 : s.score), 0) / sessions.length)
+    // Average only over scored sessions — counting unscored ones as 0 deflated it.
+    const scored = sessions.filter((s) => typeof s.score === 'number');
+    const avgScore = scored.length > 0
+        ? Math.round(scored.reduce((acc, s) => acc + (s.score as number), 0) / scored.length)
         : '-';
 
     return (
@@ -189,7 +191,7 @@ export const DashboardPage = () => {
                                             </div>
                                             <div>
                                                 <h4 className="text-sm font-medium text-white/90">{session.type}</h4>
-                                                <p className="text-xs text-white/30">{session.date} • {session.duration}</p>
+                                                <p className="text-xs text-white/30">{session.date}</p>
                                             </div>
                                         </div>
                                         <div className="text-right">

@@ -90,6 +90,7 @@ export const useHumeVision = () => {
 
     const manualCloseRef = useRef(false);
     const retryCountRef = useRef(0);
+    const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const connect = useCallback(async () => {
         try {
@@ -131,7 +132,7 @@ export const useHumeVision = () => {
                 if (!manualCloseRef.current && retryCountRef.current < 2) {
                     retryCountRef.current += 1;
                     console.log(`Hume Vision reconnecting (attempt ${retryCountRef.current})...`);
-                    setTimeout(() => connect(), 3000);
+                    retryTimerRef.current = setTimeout(() => connect(), 3000);
                 }
             };
 
@@ -159,17 +160,17 @@ export const useHumeVision = () => {
 
     const disconnect = useCallback(() => {
         manualCloseRef.current = true;
+        // A pending reconnect timer would otherwise reopen a socket that
+        // nobody will ever close (fires after unmount).
+        if (retryTimerRef.current) {
+            clearTimeout(retryTimerRef.current);
+            retryTimerRef.current = null;
+        }
         if (socketRef.current) {
             socketRef.current.close();
             socketRef.current = null;
         }
     }, []);
-
-    // Debug logging
-    useState(() => {
-        const key = import.meta.env.VITE_HUME_API_KEY;
-        console.log('[ENV CHECK] VITE_HUME_API_KEY:', key ? `Present (${key.slice(0, 5)}...)` : 'MISSING/UNDEFINED');
-    });
 
     return {
         connect,

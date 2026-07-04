@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { API_BASE_URL } from '../config/api';
 import { useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from '../components/layout/Sidebar';
@@ -19,13 +19,16 @@ export const InterviewSetupPage = () => {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState('');
 
-    useState(() => {
+    // Prefill focus from a "practice weak areas" hand-off. Runs once on mount
+    // (was a render-phase side effect via useState initializer — misbehaves
+    // under StrictMode/concurrent rendering).
+    useEffect(() => {
         const prefill = localStorage.getItem('prefill_focus_topic');
         if (prefill) {
             setInstructionPrompt(`Focus on improving my weak areas: ${prefill}`);
             localStorage.removeItem('prefill_focus_topic');
         }
-    });
+    }, []);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {

@@ -82,7 +82,9 @@ const speechLimiter = rateLimit({
 });
 
 app.use('/api/auth', authLimiter);
-app.use('/api/interview/chat', chatLimiter);
+// NOTE: Express prefix matching does NOT cover '/chat-stream' under '/chat' —
+// list both explicitly or the streaming (token-burning) endpoint is unlimited.
+app.use(['/api/interview/chat', '/api/interview/chat-stream'], chatLimiter);
 app.use('/api/interview/code', chatLimiter);
 app.use('/api/speech', speechLimiter);
 

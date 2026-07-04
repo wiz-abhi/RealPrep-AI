@@ -112,6 +112,9 @@ const attachListeners = (s: NonNullable<ReturnType<typeof getRealtimeSocket>>) =
         console.warn('STT stream error, will fall back to REST:', e?.message);
         ready = false;
     });
+    // Transport drop: without this, isSttStreamReady() stays true and turns
+    // stream into a dead socket instead of falling back to REST.
+    s.on('disconnect', () => { ready = false; });
     s.on('stt:closed', () => {
         ready = false;
         if (!active) return;

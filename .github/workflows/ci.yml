@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, abhi]
+    branches: [main, abhi, v2.0]
   pull_request:
 
 jobs:
@@ -25,7 +25,7 @@ jobs:
       - run: npm test
 
   client:
-    name: Client — typecheck + build
+    name: Client — build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -38,4 +38,8 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
       - run: npm ci
-      - run: npx tsc --noEmit
+      # `npm run build` runs `tsc -b` (real typecheck of the solution — plain
+      # `tsc --noEmit` on the solution file checks zero files) + vite build.
+      - run: npm run build
+      # NOTE: `npm run lint` is intentionally not gated yet — there are ~50
+      # pre-existing lint findings to clean up first (tracked in IMPROVEMENT_PLAN).

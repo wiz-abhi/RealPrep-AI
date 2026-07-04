@@ -5,6 +5,7 @@ import {
     speakStream,
     flushStream,
     cancelStream,
+    closeTtsStream,
     isTtsStreamReady,
 } from './sarvamTtsStream';
 import {
@@ -88,6 +89,14 @@ export const useSarvamSpeech = () => {
     const streamRef = useRef<MediaStream | null>(null);
     // True when the current turn is using the streaming-STT path (vs REST).
     const usingStreamingSttRef = useRef(false);
+    // Mirrors isRecording so start/stopRecording keep STABLE identities —
+    // an [isRecording] dep made consumers' effects re-register every toggle
+    // (spuriously firing their cleanups mid-session).
+    const recordingRef = useRef(false);
+    // Quick-tap race: user released the key while getUserMedia was still
+    // awaiting (common on first-use permission prompt) — without this the mic
+    // started AFTER release and stayed open forever.
+    const stopRequestedRef = useRef(false);
 
     // Fully stop speech: cancel the streaming pipeline AND the REST pipeline
     // (bump epoch), drop queued audio, halt the current element. Any
@@ -119,9 +128,11 @@ export const useSarvamSpeech = () => {
     }, []);
 
     // Tear down streaming connections when leaving the interview.
+    // closeTtsStream (not cancelStream) — cancel would pre-warm a fresh
+    // upstream WS that then leaks after every finished interview.
     const disconnectStreaming = useCallback(() => {
         disconnectSttStream();
-        cancelStream();
+        closeTtsStream();
     }, []);
 
     // Play one prepared audio buffer; resolves when it ends / errors / is cut off.
@@ -263,7 +274,8 @@ export const useSarvamSpeech = () => {
     }, []);
 
     const startRecording = useCallback(async () => {
-        if (isRecording) return;
+        if (recordingRef.current) return;
+        stopRequestedRef.current = false;
         setError(null);
         setTranscript('');
         setInterimTranscript('');
@@ -273,7 +285,13 @@ export const useSarvamSpeech = () => {
         if (isSttStreamReady()) {
             const started = await startSttCapture((live) => setInterimTranscript(live));
             if (started) {
+                if (stopRequestedRef.current) {
+                    // Released during acquisition (quick tap) — discard turn.
+                    await stopSttCapture();
+                    return;
+                }
                 usingStreamingSttRef.current = true;
+                recordingRef.current = true;
                 setIsRecording(true);
                 return;
             }
@@ -286,6 +304,11 @@ export const useSarvamSpeech = () => {
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
             });
+            if (stopRequestedRef.current) {
+                // Released during acquisition — never start a recorder.
+                stream.getTracks().forEach((t) => t.stop());
+                return;
+            }
             streamRef.current = stream;
 
             let mimeType = 'audio/webm';
@@ -312,16 +335,28 @@ export const useSarvamSpeech = () => {
 
             mediaRecorderRef.current = mediaRecorder;
             mediaRecorder.start(100);
+            recordingRef.current = true;
             setIsRecording(true);
         } catch (err) {
             console.error('Sarvam startRecording failed:', err);
             setError('Microphone access denied or not available');
+            // Release the mic if we grabbed it before the failure.
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach((t) => t.stop());
+                streamRef.current = null;
+            }
+            recordingRef.current = false;
             setIsRecording(false);
         }
-    }, [isRecording, stopSpeaking, transcribeAudio]);
+    }, [stopSpeaking, transcribeAudio]);
 
     const stopRecording = useCallback(() => {
-        if (!isRecording) return;
+        if (!recordingRef.current) {
+            // Mic may still be mid-acquisition — flag so startRecording aborts.
+            stopRequestedRef.current = true;
+            return;
+        }
+        recordingRef.current = false;
 
         // Streaming path: the transcript accumulated live — finalize it.
         if (usingStreamingSttRef.current) {
@@ -343,7 +378,7 @@ export const useSarvamSpeech = () => {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
         }
-    }, [isRecording]);
+    }, []);
 
     return {
         transcript,

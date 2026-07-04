@@ -40,6 +40,7 @@ export const AIInterviewerAvatar: React.FC<AIInterviewerAvatarProps> = ({
     const audioContextRef = useRef<AudioContext | null>(null);
     const sourceRef = useRef<MediaElementAudioSourceNode | null>(null);
     const animFrameRef = useRef<number>(0);
+    const drawFrameRef = useRef<number>(0);
     const [audioLevel, setAudioLevel] = useState(0);
 
     const name = getInterviewerName(interviewType, interviewerName);
@@ -154,11 +155,13 @@ export const AIInterviewerAvatar: React.FC<AIInterviewerAvatarProps> = ({
                 }
             }
 
-            requestAnimationFrame(draw);
+            // Store EACH rescheduled frame id — cancelling only the first left
+            // the loop running forever (stacking a new loop per state flip).
+            drawFrameRef.current = requestAnimationFrame(draw);
         };
 
-        const frame = requestAnimationFrame(draw);
-        return () => cancelAnimationFrame(frame);
+        drawFrameRef.current = requestAnimationFrame(draw);
+        return () => cancelAnimationFrame(drawFrameRef.current);
     }, [isSpeaking, isProcessing]);
 
     // Status text and colors

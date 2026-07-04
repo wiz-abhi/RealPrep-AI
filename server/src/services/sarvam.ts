@@ -30,7 +30,8 @@ const messageText = (msg: any): string => {
     const content = typeof msg?.content === 'string' ? msg.content : '';
     if (content.trim()) return content;
     const reasoning = typeof msg?.reasoning_content === 'string' ? msg.reasoning_content : '';
-    return reasoning;
+    // Never surface raw chain-of-thought to the candidate.
+    return reasoning.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 };
 
 async function callSarvamChat(messages: Message[], opts: CallOpts = {}): Promise<string> {
@@ -74,12 +75,16 @@ async function callSarvamChat(messages: Message[], opts: CallOpts = {}): Promise
                     delay *= 2;
                     continue;
                 }
-                throw new Error(`Sarvam API ${res.status}: ${errText}`);
+                // 4xx etc. — retrying an identical bad request just wastes ~14s.
+                const err: any = new Error(`Sarvam API ${res.status}: ${errText}`);
+                err.nonRetryable = !isRetryable;
+                throw err;
             }
 
             const data: any = await res.json();
             return messageText(data?.choices?.[0]?.message);
-        } catch (err) {
+        } catch (err: any) {
+            if (err?.nonRetryable) throw err;
             lastError = err;
             if (attempt < maxRetries) {
                 await new Promise(r => setTimeout(r, delay));
@@ -187,14 +192,6 @@ export class SarvamService {
 
     constructor(modelName?: string) {
         this.modelName = modelName || DEFAULT_CHAT_MODEL;
-    }
-
-    async generateResponse(history: HistoryEntry[], input: string): Promise<string> {
-        const messages: Message[] = [
-            ...historyToMessages(history),
-            { role: 'user', content: input },
-        ];
-        return callSarvamChat(messages, { model: this.modelName });
     }
 
     async generateInterviewResponse(

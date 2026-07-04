@@ -824,6 +824,11 @@ export const chat = async (req: Request, res: Response) => {
                     timestamp: new Date().toISOString(),
                     emotions: emotions.slice(0, 5),
                 });
+                // Cap: unbounded growth rewrites an ever-larger JSON blob on
+                // every turn and bloats the final report payload.
+                if (emotionHistory.length > 200) {
+                    emotionHistory.splice(0, emotionHistory.length - 200);
+                }
             }
             prisma.session
                 .update({
@@ -932,6 +937,11 @@ export const chatStream = async (req: Request, res: Response) => {
                     timestamp: new Date().toISOString(),
                     emotions: emotions.slice(0, 5),
                 });
+                // Cap: unbounded growth rewrites an ever-larger JSON blob on
+                // every turn and bloats the final report payload.
+                if (emotionHistory.length > 200) {
+                    emotionHistory.splice(0, emotionHistory.length - 200);
+                }
             }
             prisma.session
                 .update({
@@ -994,6 +1004,12 @@ export const chatStream = async (req: Request, res: Response) => {
         const abortController = new AbortController();
         req.on('close', () => abortController.abort());
 
+        // SSE heartbeat: proxies/load-balancers kill idle connections while
+        // the LLM is still thinking — a comment line every 15s keeps it alive.
+        const heartbeat = setInterval(() => {
+            try { res.write(': ping\n\n'); } catch { /* connection gone */ }
+        }, 15000);
+
         let fullResponse = '';
         try {
             for await (const delta of sarvam.generateInterviewResponseStream(
@@ -1017,8 +1033,18 @@ export const chatStream = async (req: Request, res: Response) => {
             send({ type: 'done', response: cleaned, phaseLabel });
         } catch (err) {
             console.error('Chat stream inner error:', err);
+            // Persist whatever the candidate already saw/heard — otherwise the
+            // transcript ends on a user turn and history gets consecutive
+            // user-role messages next turn.
+            if (fullResponse.length > 0) {
+                const partial = cleanInterviewerPrefix(fullResponse);
+                prisma.transcript
+                    .create({ data: { sessionId, sender: 'ai', text: partial } })
+                    .catch((e) => console.error('Failed to persist partial AI transcript:', e));
+            }
             send({ type: 'error', message: 'Stream failed' });
         } finally {
+            clearInterval(heartbeat);
             res.end();
         }
     } catch (error) {
@@ -1130,10 +1156,16 @@ export const endSession = async (req: Request, res: Response) => {
         const session = await loadOwnedSession(req, res, sessionId);
         if (!session) return;
 
-        // Refund unused credits BEFORE we do the (potentially slow) report generation.
-        // Only refund if the session hasn't already been closed to avoid double-refund.
+        // Refund unused credits BEFORE the (potentially slow) report generation.
+        // Atomic claim: flip status away from 'active' first so two concurrent
+        // /end calls (double-click, auto-end racing manual end) can't both
+        // refund — only the caller whose updateMany actually matched refunds.
         let refunded = 0;
-        if (session.status !== 'completed') {
+        const claimed = await prisma.session.updateMany({
+            where: { id: sessionId, status: 'active' },
+            data: { status: 'ending' },
+        });
+        if (claimed.count === 1) {
             refunded = await refundUnusedCredits(session);
         }
 
@@ -1307,8 +1339,13 @@ export const endSessionWithoutReport = async (req: Request, res: Response) => {
         const session = await loadOwnedSession(req, res, sessionId);
         if (!session) return;
 
+        // Same atomic claim as endSession — prevents double refunds.
         let refunded = 0;
-        if (session.status !== 'completed') {
+        const claimed = await prisma.session.updateMany({
+            where: { id: sessionId, status: 'active' },
+            data: { status: 'ending' },
+        });
+        if (claimed.count === 1) {
             refunded = await refundUnusedCredits(session);
         }
 
@@ -1476,9 +1513,12 @@ Respond with ONLY the JSON — no prose, no markdown fences.`;
 export const getUserSessions = async (req: Request, res: Response) => {
     try {
         const userId = req.userId;
+        // List view only needs summary fields — feedback blobs (full reports,
+        // emotion history, system prompts) can reach MBs per user.
         const sessions = await prisma.session.findMany({
             where: { userId },
             orderBy: { createdAt: 'desc' },
+            select: { id: true, type: true, status: true, score: true, createdAt: true },
         });
         res.json({ success: true, data: sessions });
     } catch (error) {

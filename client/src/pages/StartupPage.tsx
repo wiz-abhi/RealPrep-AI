@@ -1,57 +1,45 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { checkBackendHealth } from '../config/api';
 
 export const StartupPage = ({ onReady }: { onReady: () => void }) => {
     const [status, setStatus] = useState<'connecting' | 'waiting' | 'ready' | 'error'>('connecting');
     const [attempts, setAttempts] = useState(0);
     const maxAttempts = 30; // 30 attempts × 2 seconds = 60 seconds max
+    const onReadyRef = useRef(onReady);
+    useEffect(() => { onReadyRef.current = onReady; });
 
-    const checkHealth = useCallback(async () => {
-        const isReady = await checkBackendHealth();
-        if (isReady) {
-            setStatus('ready');
-            setTimeout(onReady, 500);
-            return true;
-        }
-        return false;
-    }, [onReady]);
-
+    // Single poll loop driven by the timeout only. (Previously `attempts` was
+    // an effect dep, so every setAttempts re-ran the effect, cleared the timer,
+    // and immediately re-polled — hammering /health with zero spacing.)
     useEffect(() => {
         let mounted = true;
-        let timeoutId: NodeJS.Timeout;
+        let timeoutId: ReturnType<typeof setTimeout>;
+        let count = 0;
 
         const poll = async () => {
             if (!mounted) return;
+            setStatus(count === 0 ? 'connecting' : 'waiting');
 
-            if (attempts === 0) {
-                setStatus('connecting');
-            } else {
-                setStatus('waiting');
+            const isReady = await checkBackendHealth();
+            if (!mounted) return;
+            if (isReady) {
+                setStatus('ready');
+                setTimeout(() => onReadyRef.current(), 500);
+                return;
             }
 
-            const isReady = await checkHealth();
-
-            if (!mounted || isReady) return;
-
-            setAttempts(prev => {
-                const next = prev + 1;
-                if (next >= maxAttempts) {
-                    setStatus('error');
-                    return next;
-                }
-                // Poll again in 2 seconds
-                timeoutId = setTimeout(poll, 2000);
-                return next;
-            });
+            count += 1;
+            setAttempts(count);
+            if (count >= maxAttempts) {
+                setStatus('error');
+                return;
+            }
+            timeoutId = setTimeout(poll, 2000);
         };
 
         poll();
-
-        return () => {
-            mounted = false;
-            clearTimeout(timeoutId);
-        };
-    }, [checkHealth, attempts, maxAttempts]);
+        return () => { mounted = false; clearTimeout(timeoutId); };
+    }, []);
 
     const handleRetry = () => {
         setAttempts(0);

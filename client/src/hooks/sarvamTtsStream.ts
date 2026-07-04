@@ -129,6 +129,23 @@ export function flushStream() {
     if (isTtsStreamReady() && s) s.emit('tts:flush');
 }
 
+/**
+ * Full teardown when leaving the interview: stops local audio AND tells the
+ * server to close the upstream Sarvam WS *without* the pre-warm reopen that
+ * tts:cancel does — otherwise every finished interview leaked a live WS.
+ */
+export function closeTtsStream() {
+    turnId++;
+    leftoverByte = null;
+    activeSources.forEach((src) => { try { src.stop(); } catch { /* noop */ } });
+    activeSources = [];
+    if (audioCtx) playhead = audioCtx.currentTime;
+    onSpeakingChange?.(false);
+    ready = false;
+    const s = getRealtimeSocket();
+    if (s) s.emit('tts:close');
+}
+
 export function cancelStream() {
     turnId++;
     leftoverByte = null;

@@ -38,7 +38,6 @@ export const InterviewPage = () => {
     // Phase 3: interview-plan progress chip + last code-execution result panel.
     const [phaseLabel, setPhaseLabel] = useState<string>('');
     const [codeExecution, setCodeExecution] = useState<any>(null);
-    const [_hasPlayedInitial, setHasPlayedInitial] = useState(false);
     const [textInput, setTextInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isCodeSubmitting, setIsCodeSubmitting] = useState(false);
@@ -57,12 +56,16 @@ export const InterviewPage = () => {
     const inputRef = useRef<HTMLInputElement>(null);
     // Guards the greeting auto-play against React StrictMode double effects.
     const initialPlayedRef = useRef(false);
+    // True after the user interrupts the AI (barge-in / Escape / pause) —
+    // silences the remainder of the current turn's streaming speech.
+    const speechCancelledRef = useRef(false);
+    // Guards filler pre-synthesis against StrictMode double-mount.
+    const primedRef = useRef(false);
 
     const {
         transcript,
         interimTranscript,
         isRecording,
-        isProcessing: _isProcessing,
         isSpeaking,
         error: audioError,
         startRecording,
@@ -88,7 +91,6 @@ export const InterviewPage = () => {
         disconnect: disconnectVision,
         sendFrame,
         emotions,
-        isConnected: _isVisionConnected
     } = useHumeVision();
 
     // Voice Activity Detection — powers hands-free mode + barge-in.
@@ -129,7 +131,6 @@ export const InterviewPage = () => {
                 }
 
                 const data = await res.json();
-                console.log('Session Loaded:', data);
                 const session = data.data;
 
                 // Set timer values from server
@@ -152,8 +153,10 @@ export const InterviewPage = () => {
                 // Open the low-latency streaming-TTS connection for this persona.
                 if (connectStreaming) connectStreaming(mappedType);
                 // Pre-synthesize this persona's filler clips as a REST fallback
-                // (used only if the stream isn't ready).
-                if (primeFillers) {
+                // (used only if the stream isn't ready). primedRef stops
+                // StrictMode's double effect from racing 8 concurrent TTS calls.
+                if (primeFillers && !primedRef.current) {
+                    primedRef.current = true;
                     const fillers = FILLERS[mappedType as keyof typeof FILLERS] || FILLERS.technical;
                     primeFillers(fillers).catch(() => { /* non-fatal */ });
                 }
@@ -172,13 +175,10 @@ export const InterviewPage = () => {
                     const lastMessage = session.transcript[session.transcript.length - 1];
                     if (lastMessage.sender === 'ai' && !initialPlayedRef.current) {
                         initialPlayedRef.current = true;
-                        console.log('Auto-playing last AI message');
                         setTimeout(() => {
                             playResponse(lastMessage.text);
                         }, 1000);
                     }
-
-                    setHasPlayedInitial(true);
                 }
 
                 setSessionLoading(false);
@@ -226,24 +226,12 @@ export const InterviewPage = () => {
         return () => clearInterval(persist);
     }, [sessionId, sessionLoading]);
 
-    // Persist elapsed on unmount and page close
+    // Persist elapsed on unmount. (No sendBeacon on page close: beacons POST
+    // without an Authorization header, so the authed PUT route always rejected
+    // them — the server's wall-clock timer covers the tab-close case anyway.)
     useEffect(() => {
-        const saveElapsed = () => {
-            const token = localStorage.getItem('token');
-            if (token && sessionId) {
-                // Use sendBeacon for reliable save on page close
-                const data = JSON.stringify({ elapsedSeconds: elapsedRef.current });
-                navigator.sendBeacon?.(
-                    `${API_BASE_URL}/api/interview/session/${sessionId}/elapsed`,
-                    new Blob([data], { type: 'application/json' })
-                );
-            }
-        };
-
-        window.addEventListener('beforeunload', saveElapsed);
         return () => {
-            window.removeEventListener('beforeunload', saveElapsed);
-            // Also persist on component unmount (navigation)
+            // Persist on component unmount (navigation)
             const token = localStorage.getItem('token');
             if (token && sessionId) {
                 fetch(`${API_BASE_URL}/api/interview/session/${sessionId}/elapsed`, {
@@ -343,6 +331,7 @@ export const InterviewPage = () => {
             onSpeechStart: () => {
                 // Barge-in: cut the AI off mid-sentence when the user starts talking.
                 if (isSpeakingRef.current) {
+                    speechCancelledRef.current = true;
                     stopSpeaking();
                 }
                 // Start capturing the user's turn if not already.
@@ -394,6 +383,7 @@ export const InterviewPage = () => {
         pausedRef.current = true;
         setIsPaused(true);
         // Kill all live audio + capture so nothing runs during the pause.
+        speechCancelledRef.current = true;
         stopSpeaking();
         if (isRecordingRef.current) stopRecording();
         stopVAD();
@@ -457,6 +447,7 @@ export const InterviewPage = () => {
                 if (!spacePressed.current && voiceModeRef.current && !isLoadingRef.current) {
                     spacePressed.current = true;
                     // Trigger recording start
+                    speechCancelledRef.current = true;
                     stopSpeaking();
                     startRecording();
                 }
@@ -464,7 +455,7 @@ export const InterviewPage = () => {
 
             if (e.key === 'Escape') {
                 if (isSpeakingRef.current) {
-                    console.log('Skipping AI speech via Escape key');
+                    speechCancelledRef.current = true;
                     stopSpeaking();
                 }
             }
@@ -507,6 +498,7 @@ export const InterviewPage = () => {
         // Clean slate: cut off any audio still playing from the previous turn
         // (e.g. user typed a new answer while the AI was still speaking).
         stopSpeaking();
+        speechCancelledRef.current = false; // fresh turn — speech allowed again
 
         // Add user message + AI placeholder in one batched update.
         setMessages(prev => [
@@ -534,9 +526,34 @@ export const InterviewPage = () => {
         const useChunkedTTS = speechProvider === 'azure' && voiceMode;
         const wantsTTS = usePipeline || useChunkedTTS;
 
-        // Push a chunk of text into whichever TTS path is active.
+        // Azure sequential worker: plays queued chunks one at a time.
+        // (Declared BEFORE speakChunk/the filler call — referencing it earlier
+        // was a TDZ ReferenceError that bricked Azure voice turns.)
+        const drainTTS = async () => {
+            if (ttsWorkerRunning || !voiceMode) return;
+            ttsWorkerRunning = true;
+            try {
+                while (ttsQueue.length > 0 && !ttsAborted && !speechCancelledRef.current) {
+                    const chunk = ttsQueue.shift()!;
+                    try {
+                        await playResponse(chunk);
+                    } catch (e) {
+                        console.error('TTS chunk failed:', e);
+                        ttsAborted = true;
+                        break;
+                    }
+                }
+            } finally {
+                ttsWorkerRunning = false;
+            }
+        };
+
+        // Push a chunk of text into whichever TTS path is active. Once the user
+        // interrupts (barge-in / Escape / pause), the rest of this turn's text
+        // must stay silent — without this gate the AI resumed speaking the
+        // remaining sentences as they streamed in.
         const speakChunk = (chunk: string) => {
-            if (!chunk.trim()) return;
+            if (!chunk.trim() || speechCancelledRef.current) return;
             if (usePipeline) {
                 enqueueSpeech!(chunk);
             } else {
@@ -556,26 +573,6 @@ export const InterviewPage = () => {
             fillerCountRef.current += 1;
             speakChunk(filler);
         }
-
-        // Azure sequential worker: plays queued chunks one at a time.
-        const drainTTS = async () => {
-            if (ttsWorkerRunning || !voiceMode) return;
-            ttsWorkerRunning = true;
-            try {
-                while (ttsQueue.length > 0 && !ttsAborted) {
-                    const chunk = ttsQueue.shift()!;
-                    try {
-                        await playResponse(chunk);
-                    } catch (e) {
-                        console.error('TTS chunk failed:', e);
-                        ttsAborted = true;
-                        break;
-                    }
-                }
-            } finally {
-                ttsWorkerRunning = false;
-            }
-        };
 
         // Extract speakable chunks from ttsBuffer as text streams in.
         // The FIRST chunk breaks on the earliest clause boundary (comma/colon/
@@ -667,8 +664,9 @@ export const InterviewPage = () => {
                                     ttsBuffer = '';
                                 }
                                 // Flush the streaming connection so Sarvam emits
-                                // any remaining buffered audio for this turn.
-                                if (usePipeline && flushSpeech) flushSpeech();
+                                // any remaining buffered audio for this turn —
+                                // unless the user already interrupted it.
+                                if (usePipeline && flushSpeech && !speechCancelledRef.current) flushSpeech();
                             } else if (voiceMode && aiFullText.length > 0) {
                                 // Fallback (no chunked path): play the whole thing at once.
                                 void playResponse(aiFullText);
@@ -698,16 +696,16 @@ export const InterviewPage = () => {
     // Handle voice transcript when user stops recording
     // With accumulation model, transcript only updates when stopListening is called
     useEffect(() => {
-        console.log('Transcript effect:', { isRecording, transcript, voiceMode, lastSent: lastSentTranscript.current });
-
-        // Send if we have a new transcript that's different from the last sent one
-        // Transcript will only be set when user stops recording (accumulated result)
+        // Send if we have a new transcript that's different from the last sent one.
+        // If a previous turn is still streaming (isLoading) or we're paused,
+        // do NOT mark it sent — leave it pending so the effect re-fires and
+        // delivers it once the guard clears (answers were silently dropped before).
         if (transcript && voiceMode && transcript !== lastSentTranscript.current && !isRecording) {
-            console.log('Sending complete transcribed message:', transcript);
+            if (isLoading || pausedRef.current) return;
             lastSentTranscript.current = transcript;
             handleSendMessage(transcript);
         }
-    }, [transcript, voiceMode, handleSendMessage, isRecording]);
+    }, [transcript, voiceMode, handleSendMessage, isRecording, isLoading]);
 
     const handleTextSubmit = (e: React.FormEvent) => {
         e.preventDefault();

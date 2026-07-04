@@ -141,7 +141,13 @@ export function registerTtsStream(io: Server) {
             });
 
             ws.on('close', () => {
-                if (state.sarvam === ws) state.sarvam = null;
+                if (state.sarvam === ws) {
+                    state.sarvam = null;
+                    // Tell the client (deliberate closes remove listeners first,
+                    // so this only fires on unexpected upstream closes) — else
+                    // the client could wait on tts:final forever.
+                    socket.emit('tts:error', { message: 'TTS stream closed upstream' });
+                }
             });
         };
 
@@ -158,8 +164,9 @@ export function registerTtsStream(io: Server) {
                 state.sarvam.send(JSON.stringify({ type: 'text', data: { text } }));
             } else {
                 // Queue; drained when the socket opens (openSarvam no-ops if
-                // one is already connecting).
-                state.pendingText.push(text);
+                // one is already connecting). Capped so a connect loop can't
+                // grow the buffer unboundedly.
+                if (state.pendingText.length < 50) state.pendingText.push(text);
                 openSarvam();
             }
         });
@@ -175,6 +182,13 @@ export function registerTtsStream(io: Server) {
         socket.on('tts:cancel', () => {
             closeSarvam();
             openSarvam();
+        });
+
+        // Full teardown (leaving the interview): close upstream WITHOUT the
+        // pre-warm reopen — otherwise every finished interview leaks a live
+        // Sarvam WS until the tab closes.
+        socket.on('tts:close', () => {
+            closeSarvam();
         });
 
         // ── STT ──
