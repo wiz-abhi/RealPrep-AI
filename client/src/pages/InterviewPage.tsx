@@ -664,7 +664,7 @@ export const InterviewPage = () => {
                                 // any remaining buffered audio for this turn.
                                 if (usePipeline && flushSpeech) flushSpeech();
                             } else if (voiceMode && aiFullText.length > 0) {
-                                // ElevenLabs (no pipeline): play the whole thing at once.
+                                // Fallback (no chunked path): play the whole thing at once.
                                 void playResponse(aiFullText);
                             }
                         } else if (evt.type === 'error') {

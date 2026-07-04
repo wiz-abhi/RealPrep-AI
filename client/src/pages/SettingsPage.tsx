@@ -8,7 +8,6 @@ import { Key, Shield, Eye, EyeOff, Volume2 } from 'lucide-react';
 
 // API Key localStorage keys
 const API_KEY_STORAGE = {
-    elevenlabs: 'user_elevenlabs_api_key',
     hume: 'user_hume_api_key',
     azure_key: 'user_azure_speech_key',
     azure_region: 'user_azure_speech_region',
@@ -27,27 +26,25 @@ export const SettingsPage = () => {
     const [message, setMessage] = useState('');
 
     // API Keys state
-    const [elevenlabsKey, setElevenlabsKey] = useState('');
     const [humeKey, setHumeKey] = useState('');
     const [azureKey, setAzureKey] = useState('');
     const [azureRegion, setAzureRegion] = useState('');
-    const [speechProvider, setSpeechProvider] = useState<'elevenlabs' | 'azure' | 'sarvam'>('elevenlabs');
-    const [showKeys, setShowKeys] = useState({ elevenlabs: false, hume: false, azure: false });
+    const [speechProvider, setSpeechProvider] = useState<'azure' | 'sarvam'>('sarvam');
+    const [showKeys, setShowKeys] = useState({ hume: false, azure: false });
 
     // Get default speech provider from env
-    const defaultProvider = import.meta.env.VITE_DEFAULT_SPEECH_PROVIDER || 'elevenlabs';
+    const defaultProvider = import.meta.env.VITE_DEFAULT_SPEECH_PROVIDER || 'sarvam';
 
     // Load saved keys on mount
     useEffect(() => {
-        setElevenlabsKey(localStorage.getItem(API_KEY_STORAGE.elevenlabs) || '');
         setHumeKey(localStorage.getItem(API_KEY_STORAGE.hume) || '');
         setAzureKey(localStorage.getItem(API_KEY_STORAGE.azure_key) || '');
         setAzureRegion(localStorage.getItem(API_KEY_STORAGE.azure_region) || '');
         const savedProvider = localStorage.getItem(API_KEY_STORAGE.speech_provider);
-        setSpeechProvider((savedProvider as 'elevenlabs' | 'azure' | 'sarvam') || defaultProvider);
+        setSpeechProvider((savedProvider as 'azure' | 'sarvam') || defaultProvider);
     }, []);
 
-    const handleSaveApiKey = (service: 'elevenlabs' | 'hume', key: string) => {
+    const handleSaveApiKey = (service: 'hume', key: string) => {
         if (key.trim()) {
             localStorage.setItem(API_KEY_STORAGE[service], key.trim());
             setMessage(`${service.charAt(0).toUpperCase() + service.slice(1)} API key saved locally`);
@@ -57,19 +54,18 @@ export const SettingsPage = () => {
         }
     };
 
-    const handleClearApiKey = (service: 'elevenlabs' | 'hume' | 'azure_key' | 'azure_region') => {
+    const handleClearApiKey = (service: 'hume' | 'azure_key' | 'azure_region') => {
         localStorage.removeItem(API_KEY_STORAGE[service]);
-        if (service === 'elevenlabs') setElevenlabsKey('');
         if (service === 'hume') setHumeKey('');
         if (service === 'azure_key') setAzureKey('');
         if (service === 'azure_region') setAzureRegion('');
         setMessage(`API key cleared`);
     };
 
-    const handleSpeechProviderChange = (provider: 'elevenlabs' | 'azure' | 'sarvam') => {
+    const handleSpeechProviderChange = (provider: 'azure' | 'sarvam') => {
         setSpeechProvider(provider);
         localStorage.setItem(API_KEY_STORAGE.speech_provider, provider);
-        const label = provider === 'azure' ? 'Azure' : provider === 'sarvam' ? 'Sarvam AI' : 'ElevenLabs';
+        const label = provider === 'azure' ? 'Azure' : 'Sarvam AI';
         setMessage(`Speech provider set to ${label}`);
     };
 
@@ -193,45 +189,6 @@ export const SettingsPage = () => {
                         </p>
 
                         <div className="space-y-4">
-                            {/* ElevenLabs API Key */}
-                            <div>
-                                <label className="block text-xs text-white/30 mb-2">ElevenLabs API Key</label>
-                                <div className="flex gap-2">
-                                    <div className="relative flex-1">
-                                        <input
-                                            type={showKeys.elevenlabs ? 'text' : 'password'}
-                                            value={elevenlabsKey}
-                                            onChange={(e) => setElevenlabsKey(e.target.value)}
-                                            placeholder="sk_..."
-                                            className="w-full px-4 py-3 pr-10 rounded bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm"
-                                        />
-                                        <button
-                                            onClick={() => setShowKeys(s => ({ ...s, elevenlabs: !s.elevenlabs }))}
-                                            className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60"
-                                        >
-                                            {showKeys.elevenlabs ? <EyeOff size={16} /> : <Eye size={16} />}
-                                        </button>
-                                    </div>
-                                    <button
-                                        onClick={() => handleSaveApiKey('elevenlabs', elevenlabsKey)}
-                                        className="px-4 py-2 bg-white/10 hover:bg-white/20 rounded text-xs transition-colors"
-                                    >
-                                        Save
-                                    </button>
-                                    {localStorage.getItem(API_KEY_STORAGE.elevenlabs) && (
-                                        <button
-                                            onClick={() => handleClearApiKey('elevenlabs')}
-                                            className="px-3 py-2 text-white/30 hover:text-white/60 text-xs"
-                                        >
-                                            Clear
-                                        </button>
-                                    )}
-                                </div>
-                                {localStorage.getItem(API_KEY_STORAGE.elevenlabs) && (
-                                    <p className="text-[10px] text-green-400 mt-1">✓ Custom key saved</p>
-                                )}
-                            </div>
-
                             {/* Hume API Key */}
                             <div>
                                 <label className="block text-xs text-white/30 mb-2">Hume AI API Key</label>
@@ -281,7 +238,7 @@ export const SettingsPage = () => {
                         </div>
 
                         <p className="text-xs text-white/40 mb-4">
-                            Choose between ElevenLabs, Azure, or Sarvam AI for speech recognition and synthesis.
+                            Choose between Sarvam AI and Azure for speech recognition and synthesis.
                             Sarvam is server-proxied — no key needed here.
                         </p>
 
@@ -290,12 +247,11 @@ export const SettingsPage = () => {
                             <label className="block text-xs text-white/30 mb-2">Active Provider</label>
                             <select
                                 value={speechProvider}
-                                onChange={(e) => handleSpeechProviderChange(e.target.value as 'elevenlabs' | 'azure' | 'sarvam')}
+                                onChange={(e) => handleSpeechProviderChange(e.target.value as 'azure' | 'sarvam')}
                                 className="w-full px-4 py-3 rounded bg-white/5 border border-white/10 focus:border-white/30 outline-none text-sm text-white"
                             >
-                                <option value="elevenlabs" className="bg-zinc-900">ElevenLabs</option>
-                                <option value="azure" className="bg-zinc-900">Azure Speech</option>
                                 <option value="sarvam" className="bg-zinc-900">Sarvam AI (server-proxied)</option>
+                                <option value="azure" className="bg-zinc-900">Azure Speech</option>
                             </select>
                             <p className="text-[10px] text-white/30 mt-1">
                                 Default from environment: {defaultProvider}

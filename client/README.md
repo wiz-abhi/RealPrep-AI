@@ -36,9 +36,8 @@ cp .env.example .env
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `VITE_DEFAULT_SPEECH_PROVIDER` | ❌ | `sarvam` (default, server-proxied), `azure`, or `elevenlabs` |
+| `VITE_DEFAULT_SPEECH_PROVIDER` | ❌ | `sarvam` (default, server-proxied) or `azure` |
 | `VITE_HUME_API_KEY` | ❌ | Hume AI key for real-time emotion detection |
-| `VITE_ELEVENLABS_API_KEY` | ❌ | Only if using the ElevenLabs provider |
 | `VITE_AZURE_SPEECH_KEY` / `VITE_AZURE_SPEECH_REGION` | ❌ | Only if using the Azure provider |
 | `VITE_API_URL` | ❌ | Backend API URL (production only) |
 

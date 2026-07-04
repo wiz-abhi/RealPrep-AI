@@ -35,7 +35,7 @@ An advanced, AI-powered mock-interview platform with **real-time streaming voice
 ### 🔐 Account & Billing
 - **Secure auth** — JWT + bcrypt, with **password reset** via email (SMTP; falls back to console links in dev).
 - **Credit system** — 1 credit = 1 minute; ₹1 = 2 credits via Razorpay. Unused whole minutes are **refunded** on early exit.
-- **Switchable speech provider** — Sarvam (default, server-proxied), Azure, or ElevenLabs.
+- **Switchable speech provider** — Sarvam (default, server-proxied) or Azure.
 
 ---
 
@@ -47,7 +47,7 @@ An advanced, AI-powered mock-interview platform with **real-time streaming voice
 | **Backend** | Node.js, Express 5, Prisma ORM |
 | **Database** | PostgreSQL (Neon) |
 | **LLM** | **Sarvam AI** (`sarvam-30b` for turns, `sarvam-105b` for reports) |
-| **Speech** | **Sarvam** Saaras (STT) + Bulbul (TTS), server-proxied · Azure / ElevenLabs optional |
+| **Speech** | **Sarvam** Saaras (STT) + Bulbul (TTS), server-proxied · Azure optional |
 | **Voice UX** | Silero VAD (`@ricky0123/vad-web`), SSE streaming, sentence-pipelined TTS |
 | **Emotion** | Hume AI (client WebSocket) |
 | **Code exec** | Piston API |
@@ -130,9 +130,8 @@ cd server && npm test        # Vitest: timer/pause math, phase machine, payments
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `VITE_DEFAULT_SPEECH_PROVIDER` | ❌ | `sarvam` (default, server-proxied), `azure`, or `elevenlabs` |
+| `VITE_DEFAULT_SPEECH_PROVIDER` | ❌ | `sarvam` (default, server-proxied) or `azure` |
 | `VITE_HUME_API_KEY` | ❌ | Hume AI key for real-time emotion detection |
-| `VITE_ELEVENLABS_API_KEY` | ❌ | Only if using the ElevenLabs provider |
 | `VITE_AZURE_SPEECH_KEY` / `VITE_AZURE_SPEECH_REGION` | ❌ | Only if using the Azure provider |
 | `VITE_API_URL` | ❌ | Backend URL (production only) |
 
@@ -150,7 +149,7 @@ RealPrep-AI/
 │       ├── components/           # UI (GlassCard, CodeEditor, AIInterviewerAvatar)
 │       ├── context/              # AuthContext
 │       ├── hooks/                # useSpeech, useSarvamSpeech (pipelined TTS),
-│       │                         #   useVAD, useAzureSpeech, useElevenLabs, useHumeVision
+│       │                         #   useVAD, useAzureSpeech, useHumeVision
 │       └── pages/                # Interview, Report, PreJoin, Settings, Pricing, Reset/Forgot…
 ├── server/                       # Node/Express backend
 │   ├── prisma/schema.prisma      # User, Resume, Session, Transcript, PasswordResetToken
