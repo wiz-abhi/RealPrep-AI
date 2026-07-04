@@ -111,7 +111,7 @@ export const useSarvamSpeech = () => {
     const playBytes = (bytes: Uint8Array, mime: string, epoch: number): Promise<void> =>
         new Promise<void>((resolve) => {
             if (epoch !== speechEpoch) return resolve();
-            const blob = new Blob([bytes], { type: mime });
+            const blob = new Blob([bytes as BlobPart], { type: mime });
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
             globalAudio = audio;

@@ -10,7 +10,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((regs) => {
     regs.forEach((reg) => reg.unregister());
   }).catch(() => { /* noop */ });
-  if (window.caches?.keys) {
+  if ('caches' in window) {
     caches.keys().then((keys) => keys.forEach((k) => caches.delete(k))).catch(() => { /* noop */ });
   }
 }
