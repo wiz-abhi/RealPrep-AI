@@ -60,7 +60,7 @@ export const InterviewPage = () => {
 
     const {
         transcript,
-        interimTranscript: _interimTranscript,
+        interimTranscript,
         isRecording,
         isProcessing: _isProcessing,
         isSpeaking,
@@ -72,10 +72,16 @@ export const InterviewPage = () => {
         primeFillers,
         connectStreaming,
         flushSpeech,
+        disconnectStreaming,
         stopSpeaking,
         audioRef,
         provider: speechProvider
     } = useSpeech();
+
+    // Tear down realtime streaming (STT/TTS sockets) when leaving the interview.
+    useEffect(() => {
+        return () => { disconnectStreaming?.(); };
+    }, [disconnectStreaming]);
 
     const {
         connect: connectVision,
@@ -866,7 +872,7 @@ export const InterviewPage = () => {
                 <div className="flex flex-col items-end animate-pulse">
                     <span className="text-[8px] mb-0.5 text-white/30">Speaking...</span>
                     <div className="max-w-[90%] px-3 py-2 rounded text-[10px] bg-white/5 border border-dashed border-white/10 text-white/30 rounded-tr-none">
-                        {transcript || "..."}
+                        {interimTranscript || transcript || "..."}
                     </div>
                 </div>
             )}

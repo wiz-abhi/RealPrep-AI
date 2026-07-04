@@ -3,6 +3,10 @@ import WebSocket from 'ws';
 import jwt from 'jsonwebtoken';
 
 const SARVAM_TTS_WS = 'wss://api.sarvam.ai/text-to-speech/ws';
+const SARVAM_STT_WS = 'wss://api.sarvam.ai/speech-to-text/ws';
+// saarika:v2.5 is the proven streaming model; override via SARVAM_STT_MODEL.
+const STT_MODEL = process.env.SARVAM_STT_MODEL || 'saarika:v2.5';
+const STT_SAMPLE_RATE = 16000;
 
 // The streaming WebSocket uses bulbul:v2, whose speaker roster differs from
 // the REST path's v3. Valid v2 speakers: anushka, abhilash, manisha, vidya,
@@ -23,29 +27,22 @@ const SAMPLE_RATE = 22050;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_do_not_use_in_prod';
 
 type SocketState = {
-    sarvam: WebSocket | null;
+    sarvam: WebSocket | null;   // TTS WS (assigned immediately on create, may be CONNECTING)
     persona: string;
     languageCode: string;
-    pendingText: string[]; // text queued before the Sarvam socket is open
-    opening: boolean;
+    pendingText: string[];      // text queued until the TTS socket is OPEN
+    stt: WebSocket | null;      // STT WS (assigned immediately on create)
+    sttLang: string;
 };
 
 /**
- * Registers the streaming-TTS relay on the existing Socket.io server.
+ * Registers the streaming speech relay on the existing Socket.io server.
  *
- * Flow: browser ⟷ (Socket.io) ⟷ our server ⟷ (raw WS) ⟷ Sarvam Bulbul.
+ * Flow: browser ⟷ (Socket.io) ⟷ our server ⟷ (raw WS) ⟷ Sarvam.
  * The Sarvam API key never leaves the server.
  *
- * Client → server events:
- *   'tts:open'  { persona, languageCode }   open/prepare the Sarvam stream
- *   'tts:text'  { text }                    synthesize this text (streams back)
- *   'tts:flush' {}                          flush buffered text
- *   'tts:cancel'{}                          hard stop (barge-in / new turn)
- * Server → client events:
- *   'tts:ready'                             stream is connected
- *   'tts:audio' { pcm: base64, sampleRate } a chunk of PCM16 audio
- *   'tts:final'                             synthesis finished
- *   'tts:error' { message }                 fall back to REST on the client
+ * TTS events:  tts:open / tts:text / tts:flush / tts:cancel  →  tts:ready / tts:audio / tts:final / tts:error
+ * STT events:  stt:start / stt:audio / stt:stop              →  stt:ready / stt:transcript / stt:closed / stt:error
  */
 export function registerTtsStream(io: Server) {
     // Authenticate the socket handshake with the same JWT as the REST API.
@@ -69,16 +66,20 @@ export function registerTtsStream(io: Server) {
             persona: 'technical',
             languageCode: 'en-IN',
             pendingText: [],
-            opening: false,
+            stt: null,
+            sttLang: 'en-IN',
         };
 
+        // ── TTS ──
+
         const closeSarvam = () => {
-            if (state.sarvam) {
-                try { state.sarvam.removeAllListeners(); } catch { /* noop */ }
-                try { state.sarvam.close(); } catch { /* noop */ }
-                state.sarvam = null;
-            }
+            const ws = state.sarvam;
+            state.sarvam = null;
             state.pendingText = [];
+            if (ws) {
+                try { ws.removeAllListeners(); } catch { /* noop */ }
+                try { ws.close(); } catch { /* noop */ }
+            }
         };
 
         const sendConfig = (ws: WebSocket) => {
@@ -101,18 +102,18 @@ export function registerTtsStream(io: Server) {
                 socket.emit('tts:error', { message: 'SARVAM_API_KEY not set' });
                 return;
             }
-            if (state.sarvam || state.opening) return;
-            state.opening = true;
+            if (state.sarvam) return; // exists (OPEN or CONNECTING)
 
             const ws = new WebSocket(SARVAM_TTS_WS, {
                 headers: { 'Api-Subscription-Key': apiKey },
             });
+            // Claim the slot immediately — a cancel during CONNECTING cleanly
+            // closes THIS socket instead of leaking a half-open one.
+            state.sarvam = ws;
 
             ws.on('open', () => {
-                state.opening = false;
-                state.sarvam = ws;
+                if (state.sarvam !== ws) return; // cancelled while connecting
                 sendConfig(ws);
-                // Drain any text queued before the connection opened.
                 const queued = state.pendingText;
                 state.pendingText = [];
                 for (const t of queued) {
@@ -134,10 +135,9 @@ export function registerTtsStream(io: Server) {
             });
 
             ws.on('error', (err: Error) => {
-                state.opening = false;
                 console.error('Sarvam TTS WS error:', err.message);
                 socket.emit('tts:error', { message: 'Sarvam TTS connection failed' });
-                closeSarvam();
+                if (state.sarvam === ws) closeSarvam();
             });
 
             ws.on('close', () => {
@@ -148,7 +148,7 @@ export function registerTtsStream(io: Server) {
         socket.on('tts:open', (payload: { persona?: string; languageCode?: string }) => {
             state.persona = payload?.persona || 'technical';
             state.languageCode = payload?.languageCode || 'en-IN';
-            if (!state.sarvam && !state.opening) openSarvam();
+            openSarvam();
         });
 
         socket.on('tts:text', (payload: { text?: string }) => {
@@ -157,8 +157,10 @@ export function registerTtsStream(io: Server) {
             if (state.sarvam && state.sarvam.readyState === WebSocket.OPEN) {
                 state.sarvam.send(JSON.stringify({ type: 'text', data: { text } }));
             } else {
+                // Queue; drained when the socket opens (openSarvam no-ops if
+                // one is already connecting).
                 state.pendingText.push(text);
-                if (!state.opening) openSarvam();
+                openSarvam();
             }
         });
 
@@ -168,15 +170,96 @@ export function registerTtsStream(io: Server) {
             }
         });
 
-        // Hard stop: tear the Sarvam socket down and immediately re-open a clean
-        // one so the next turn is ready. Anything still buffered is discarded.
+        // Hard stop (barge-in / new turn): discard buffered text and re-open a
+        // clean stream so the next turn is pre-warmed.
         socket.on('tts:cancel', () => {
             closeSarvam();
             openSarvam();
         });
 
+        // ── STT ──
+
+        const closeStt = () => {
+            const ws = state.stt;
+            state.stt = null;
+            if (ws) {
+                try { ws.removeAllListeners(); } catch { /* noop */ }
+                try { ws.close(); } catch { /* noop */ }
+                // Deliberate close does not emit 'close' after removeAllListeners,
+                // so tell the client explicitly (it decides whether to reopen).
+                socket.emit('stt:closed');
+            }
+        };
+
+        const openStt = (languageCode: string) => {
+            const apiKey = process.env.SARVAM_API_KEY;
+            if (!apiKey) {
+                socket.emit('stt:error', { message: 'SARVAM_API_KEY not set' });
+                return;
+            }
+            if (state.stt) return; // exists (OPEN or CONNECTING)
+            state.sttLang = languageCode || 'en-IN';
+
+            const url =
+                `${SARVAM_STT_WS}?language-code=${encodeURIComponent(state.sttLang)}` +
+                `&model=${encodeURIComponent(STT_MODEL)}&mode=transcribe&sample_rate=${STT_SAMPLE_RATE}`;
+            const ws = new WebSocket(url, {
+                headers: { 'Api-Subscription-Key': apiKey },
+            });
+            state.stt = ws; // claim immediately (see TTS note)
+
+            ws.on('open', () => {
+                if (state.stt !== ws) return;
+                socket.emit('stt:ready');
+            });
+            ws.on('message', (raw: WebSocket.RawData) => {
+                let msg: any;
+                try { msg = JSON.parse(raw.toString()); } catch { return; }
+                if (msg?.type === 'data' && typeof msg.data?.transcript === 'string') {
+                    if (msg.data.transcript.trim()) {
+                        socket.emit('stt:transcript', { text: msg.data.transcript });
+                    }
+                } else if (msg?.type === 'error') {
+                    socket.emit('stt:error', { message: msg.data?.message || 'Sarvam STT error' });
+                }
+            });
+            ws.on('error', (err: Error) => {
+                console.error('Sarvam STT WS error:', err.message);
+                socket.emit('stt:error', { message: 'Sarvam STT connection failed' });
+                if (state.stt === ws) closeStt();
+            });
+            ws.on('close', () => {
+                if (state.stt === ws) {
+                    state.stt = null;
+                    socket.emit('stt:closed');
+                }
+            });
+        };
+
+        socket.on('stt:start', (payload: { languageCode?: string }) => {
+            openStt(payload?.languageCode || 'en-IN');
+        });
+
+        socket.on('stt:audio', (payload: { pcm?: string }) => {
+            if (!payload?.pcm) return;
+            if (state.stt && state.stt.readyState === WebSocket.OPEN) {
+                state.stt.send(JSON.stringify({
+                    audio: {
+                        data: payload.pcm,
+                        sample_rate: String(STT_SAMPLE_RATE),
+                        encoding: 'audio/wav',
+                    },
+                }));
+            }
+        });
+
+        socket.on('stt:stop', () => {
+            closeStt();
+        });
+
         socket.on('disconnect', () => {
             closeSarvam();
+            closeStt();
         });
     });
 }

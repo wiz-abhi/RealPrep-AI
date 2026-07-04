@@ -7,6 +7,13 @@ import {
     cancelStream,
     isTtsStreamReady,
 } from './sarvamTtsStream';
+import {
+    connectSttStream,
+    startSttCapture,
+    stopSttCapture,
+    isSttStreamReady,
+    disconnectSttStream,
+} from './sarvamSttStream';
 
 // ── Global audio state (single active audio element across the app) ──
 let globalAudio: HTMLAudioElement | null = null;
@@ -69,6 +76,7 @@ const fetchTTSBytes = async (
 
 export const useSarvamSpeech = () => {
     const [transcript, setTranscript] = useState<string>('');
+    const [interimTranscript, setInterimTranscript] = useState('');
     const [isRecording, setIsRecording] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
@@ -78,6 +86,8 @@ export const useSarvamSpeech = () => {
     const audioChunksRef = useRef<Blob[]>([]);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
+    // True when the current turn is using the streaming-STT path (vs REST).
+    const usingStreamingSttRef = useRef(false);
 
     // Fully stop speech: cancel the streaming pipeline AND the REST pipeline
     // (bump epoch), drop queued audio, halt the current element. Any
@@ -100,11 +110,18 @@ export const useSarvamSpeech = () => {
     // isSpeaking is driven by the stream's playback state while it's active.
     const connectStreaming = useCallback((persona: string) => {
         connectTtsStream(persona, 'en-IN', (speaking) => setIsSpeaking(speaking));
+        connectSttStream('en-IN');
     }, []);
 
     // Flush any text buffered on the streaming connection (call at turn end).
     const flushSpeech = useCallback(() => {
         if (isTtsStreamReady()) flushStream();
+    }, []);
+
+    // Tear down streaming connections when leaving the interview.
+    const disconnectStreaming = useCallback(() => {
+        disconnectSttStream();
+        cancelStream();
     }, []);
 
     // Play one prepared audio buffer; resolves when it ends / errors / is cut off.
@@ -247,11 +264,25 @@ export const useSarvamSpeech = () => {
 
     const startRecording = useCallback(async () => {
         if (isRecording) return;
-        try {
-            setError(null);
-            audioChunksRef.current = [];
-            stopSpeaking();
+        setError(null);
+        setTranscript('');
+        setInterimTranscript('');
+        stopSpeaking();
 
+        // Preferred path: stream mic PCM to Sarvam and get live transcripts.
+        if (isSttStreamReady()) {
+            const started = await startSttCapture((live) => setInterimTranscript(live));
+            if (started) {
+                usingStreamingSttRef.current = true;
+                setIsRecording(true);
+                return;
+            }
+            // else fall through to the REST recorder path
+        }
+        usingStreamingSttRef.current = false;
+
+        try {
+            audioChunksRef.current = [];
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
             });
@@ -282,7 +313,6 @@ export const useSarvamSpeech = () => {
             mediaRecorderRef.current = mediaRecorder;
             mediaRecorder.start(100);
             setIsRecording(true);
-            setTranscript('');
         } catch (err) {
             console.error('Sarvam startRecording failed:', err);
             setError('Microphone access denied or not available');
@@ -291,7 +321,25 @@ export const useSarvamSpeech = () => {
     }, [isRecording, stopSpeaking, transcribeAudio]);
 
     const stopRecording = useCallback(() => {
-        if (mediaRecorderRef.current && isRecording) {
+        if (!isRecording) return;
+
+        // Streaming path: the transcript accumulated live — finalize it.
+        if (usingStreamingSttRef.current) {
+            usingStreamingSttRef.current = false;
+            setIsRecording(false);
+            setIsProcessing(true);
+            stopSttCapture()
+                .then((finalText) => {
+                    setInterimTranscript('');
+                    if (finalText) setTranscript(finalText);
+                    else setError('No speech detected.');
+                })
+                .finally(() => setIsProcessing(false));
+            return;
+        }
+
+        // REST path.
+        if (mediaRecorderRef.current) {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
         }
@@ -299,6 +347,7 @@ export const useSarvamSpeech = () => {
 
     return {
         transcript,
+        interimTranscript,
         isRecording,
         isProcessing,
         isSpeaking,
@@ -310,6 +359,7 @@ export const useSarvamSpeech = () => {
         primeFillers,
         connectStreaming,
         flushSpeech,
+        disconnectStreaming,
         stopSpeaking,
         audioRef,
     };

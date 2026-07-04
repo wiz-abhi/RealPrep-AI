@@ -34,6 +34,7 @@ export const useSpeech = () => {
     type PrimeFn = ((texts: string[]) => Promise<void>) | undefined;
     type ConnectFn = ((persona: string) => void) | undefined;
     type FlushFn = (() => void) | undefined;
+    type DisconnectFn = (() => void) | undefined;
 
     if (SPEECH_PROVIDER === 'azure') {
         return {
@@ -50,6 +51,7 @@ export const useSpeech = () => {
             primeFillers: undefined as PrimeFn,
             connectStreaming: undefined as ConnectFn,
             flushSpeech: undefined as FlushFn,
+            disconnectStreaming: undefined as DisconnectFn,
             stopSpeaking: azureSpeech.stopSpeaking,
             audioRef: (azureSpeech as any).audioRef || { current: null },
             provider: 'azure' as const,
@@ -59,7 +61,7 @@ export const useSpeech = () => {
     // Default: Sarvam (streaming pipeline + server-proxied STT/TTS).
     return {
         transcript: sarvamSpeech.transcript,
-        interimTranscript: '',
+        interimTranscript: sarvamSpeech.interimTranscript || '',
         isRecording: sarvamSpeech.isRecording,
         isProcessing: sarvamSpeech.isProcessing,
         isSpeaking: sarvamSpeech.isSpeaking,
@@ -71,6 +73,7 @@ export const useSpeech = () => {
         primeFillers: sarvamSpeech.primeFillers as PrimeFn,
         connectStreaming: sarvamSpeech.connectStreaming as ConnectFn,
         flushSpeech: sarvamSpeech.flushSpeech as FlushFn,
+        disconnectStreaming: sarvamSpeech.disconnectStreaming as DisconnectFn,
         stopSpeaking: sarvamSpeech.stopSpeaking,
         audioRef: sarvamSpeech.audioRef,
         provider: 'sarvam' as const,

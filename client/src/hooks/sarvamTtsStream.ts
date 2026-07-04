@@ -1,22 +1,21 @@
-import { io, type Socket } from 'socket.io-client';
-import { API_BASE_URL } from '../config/api';
+import { getRealtimeSocket } from './realtimeSocket';
 
 /**
- * Streaming TTS client (Option A): talks to our server's Socket.io relay, which
- * proxies Sarvam's Bulbul TTS WebSocket. Audio arrives as raw PCM16 chunks and
- * plays gaplessly through the Web Audio API (no per-chunk decode), so the first
- * sound is heard ~150-300ms after text is sent instead of after a full clause.
- *
- * Everything is a module-level singleton (one socket + one AudioContext for the
- * app). If the socket never becomes ready, callers fall back to the REST pipeline.
+ * Streaming TTS client (Option A): uses the shared realtime Socket.io connection
+ * to reach our server's Sarvam Bulbul TTS relay. Audio arrives as raw PCM16 and
+ * plays gaplessly via the Web Audio API. Falls back to the REST pipeline if the
+ * stream isn't ready.
  */
 
-let socket: Socket | null = null;
 let ready = false;
+let listenersAttached = false;
+let lastPersona = 'technical';
+let lastLang = 'en-IN';
+
 let audioCtx: AudioContext | null = null;
-let playhead = 0;                 // next scheduled start time (in ctx time)
-let turnId = 0;                   // bumped on cancel; stale audio is ignored
-let leftoverByte: number | null = null; // carries an odd trailing PCM byte between chunks
+let playhead = 0;
+let turnId = 0;
+let leftoverByte: number | null = null;
 let activeSources: AudioBufferSourceNode[] = [];
 let onSpeakingChange: ((speaking: boolean) => void) | null = null;
 
@@ -45,9 +44,6 @@ const handlePcm = (b64: string, sampleRate: number) => {
     const ctx = ensureCtx();
 
     let bytes = base64ToBytes(b64);
-
-    // Re-attach a byte carried over from the previous (odd-length) chunk so
-    // 16-bit samples stay aligned across chunk boundaries.
     if (leftoverByte !== null) {
         const merged = new Uint8Array(bytes.length + 1);
         merged[0] = leftoverByte;
@@ -61,8 +57,7 @@ const handlePcm = (b64: string, sampleRate: number) => {
     }
     if (bytes.length === 0) return;
 
-    // Copy into an aligned buffer (subarray may not be 2-byte aligned for Int16Array).
-    const aligned = new Uint8Array(bytes); // fresh, offset 0
+    const aligned = new Uint8Array(bytes);
     const int16 = new Int16Array(aligned.buffer, 0, aligned.length >> 1);
     const f32 = new Float32Array(int16.length);
     for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768;
@@ -85,7 +80,6 @@ const handlePcm = (b64: string, sampleRate: number) => {
     };
 };
 
-/** Open (or re-target) the streaming connection for a persona. Idempotent. */
 export function connectTtsStream(
     persona: string,
     languageCode = 'en-IN',
@@ -93,57 +87,55 @@ export function connectTtsStream(
 ) {
     if (!streamingEnabled()) return;
     onSpeakingChange = onSpeaking || onSpeakingChange;
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    lastPersona = persona;
+    lastLang = languageCode;
 
-    if (socket) {
-        socket.emit('tts:open', { persona, languageCode });
-        return;
+    const s = getRealtimeSocket();
+    if (!s) return;
+
+    if (!listenersAttached) {
+        listenersAttached = true;
+        s.on('tts:ready', () => { ready = true; });
+        s.on('tts:audio', (p: { pcm: string; sampleRate: number }) => {
+            if (p?.pcm) handlePcm(p.pcm, p.sampleRate || 22050);
+        });
+        s.on('tts:final', () => {
+            // Utterance boundary: drop any odd-byte carry so a stale byte can't
+            // prepend a click to the next utterance's first chunk.
+            leftoverByte = null;
+        });
+        s.on('tts:error', (e: any) => {
+            console.warn('TTS stream error, will fall back to REST:', e?.message);
+            ready = false;
+        });
+        s.on('disconnect', () => { ready = false; });
+        s.on('connect_error', (err) => {
+            console.warn('Realtime socket connect_error:', err.message);
+            ready = false;
+        });
+        s.on('connect', () => s.emit('tts:open', { persona: lastPersona, languageCode: lastLang }));
     }
 
-    socket = io(API_BASE_URL, {
-        auth: { token },
-        transports: ['websocket'],
-        reconnection: true,
-    });
-    socket.on('connect', () => socket!.emit('tts:open', { persona, languageCode }));
-    socket.on('tts:ready', () => { ready = true; });
-    socket.on('tts:audio', (payload: { pcm: string; sampleRate: number }) => {
-        if (payload?.pcm) handlePcm(payload.pcm, payload.sampleRate || 22050);
-    });
-    socket.on('tts:final', () => { /* playback drains on its own */ });
-    socket.on('tts:error', (e: any) => {
-        console.warn('TTS stream error, will fall back to REST:', e?.message);
-        ready = false;
-    });
-    socket.on('disconnect', () => { ready = false; });
-    socket.on('connect_error', (err) => {
-        console.warn('TTS stream connect_error, falling back to REST:', err.message);
-        ready = false;
-    });
+    if (s.connected) s.emit('tts:open', { persona, languageCode });
 }
 
 export function speakStream(text: string) {
-    if (isTtsStreamReady() && socket) socket.emit('tts:text', { text });
+    const s = getRealtimeSocket();
+    if (isTtsStreamReady() && s) s.emit('tts:text', { text });
 }
 
 export function flushStream() {
-    if (isTtsStreamReady() && socket) socket.emit('tts:flush');
+    const s = getRealtimeSocket();
+    if (isTtsStreamReady() && s) s.emit('tts:flush');
 }
 
-/** Hard stop for barge-in / new turn: silence audio and reset the stream. */
 export function cancelStream() {
     turnId++;
     leftoverByte = null;
-    activeSources.forEach((s) => { try { s.stop(); } catch { /* noop */ } });
+    activeSources.forEach((src) => { try { src.stop(); } catch { /* noop */ } });
     activeSources = [];
     if (audioCtx) playhead = audioCtx.currentTime;
     onSpeakingChange?.(false);
-    if (socket) socket.emit('tts:cancel');
-}
-
-export function disconnectTtsStream() {
-    cancelStream();
-    if (socket) { socket.disconnect(); socket = null; }
-    ready = false;
+    const s = getRealtimeSocket();
+    if (s) s.emit('tts:cancel');
 }
