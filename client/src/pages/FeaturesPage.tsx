@@ -10,9 +10,9 @@ export const FeaturesPage = () => {
             title: 'AI-Powered Interviewer',
             description: 'Practice with an intelligent AI that asks relevant questions based on your resume.',
             details: [
-                'Context-aware questions using RAG',
-                'Adaptive difficulty',
-                'Industry-specific scenarios'
+                'Context-aware questions from your resume',
+                'Structured, phase-based interviews',
+                'Real code execution & evaluation'
             ]
         },
         {
@@ -48,11 +48,11 @@ export const FeaturesPage = () => {
         {
             icon: '🎤',
             title: 'Voice Interaction',
-            description: 'Natural voice-based interviews with speech recognition.',
+            description: 'Natural, real-time voice interviews that stream as you talk.',
             details: [
-                'High-quality synthesis',
-                'Accurate recognition',
-                'Natural flow'
+                'Real-time streaming speech',
+                'Hands-free mode with barge-in',
+                'Interrupt the AI anytime'
             ]
         },
         {

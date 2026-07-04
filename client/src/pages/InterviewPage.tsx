@@ -802,7 +802,7 @@ export const InterviewPage = () => {
         stopSpeaking(); // Ensure speech stops
         try {
             const token = localStorage.getItem('token');
-            // End session without generating AI report (saves Gemini tokens)
+            // End session without generating AI report (saves LLM tokens)
             await fetch(`${API_BASE_URL}/api/interview/end-quick`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
